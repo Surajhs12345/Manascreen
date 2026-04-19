@@ -1090,11 +1090,140 @@ const STEP={
   RESULT:"result", EXERCISES:"exercises", FAQ:"faq", LEARN:"learn",
 };
 
+const SAVE_KEY="manascreen_progress_v1";
+const SAVE_EXPIRY_HOURS=24;
+const SAVEABLE_STEPS=[STEP.WHO,STEP.PROFILE,STEP.MEDICAL,STEP.DURATION,STEP.PHQ9,STEP.BRIDGE,STEP.GAD7,STEP.PHQ15,STEP.MDQ,STEP.TRAUMA,STEP.SLEEP,STEP.PSYCHOSIS,STEP.FUNCTIONAL];
+
+/* ─── Resume prompt shown on return ─────────────────────────────── */
+function ResumePrompt({savedAt,onResume,onStartOver}){
+  const mins=Math.round((Date.now()-savedAt)/60000);
+  const timeAgo=mins<1?"just now":mins<60?`${mins} min ago`:`${Math.round(mins/60)} hr ago`;
+  return(
+    <div style={{textAlign:"center",paddingTop:24}}>
+      <Fade>
+        <div style={{fontSize:56,marginBottom:14}}>🌱</div>
+        <Pill color={C.sage}>Welcome back</Pill>
+        <h2 style={{fontFamily:FD,fontSize:26,color:C.text,margin:"12px 0 10px"}}>You have an assessment in progress</h2>
+        <p style={{color:C.textMid,fontSize:15,lineHeight:1.75,marginBottom:24}}>You started {timeAgo}. Would you like to continue where you left off, or start fresh?</p>
+        <div style={{display:"flex",flexDirection:"column",gap:12}}>
+          <WarmButton onClick={onResume} variant="sage">Continue where I left off →</WarmButton>
+          <WarmButton onClick={onStartOver} variant="secondary">Start over</WarmButton>
+        </div>
+        <p style={{color:C.textMuted,fontSize:12,marginTop:16,lineHeight:1.6}}>Your progress is saved only on this device and auto-deletes after 24 hours.</p>
+      </Fade>
+    </div>
+  );
+}
+
+/* ─── Persistent "Need Help Now" floating button ────────────────── */
+function HelpNowButton({active,onToggle}){
+  return(
+    <>
+      <button onClick={onToggle} aria-label="Need help now" style={{position:"fixed",bottom:20,right:20,zIndex:100,width:58,height:58,borderRadius:"50%",border:"none",background:active?C.rose:C.white,color:active?C.white:C.rose,boxShadow:active?"0 6px 24px rgba(201,96,106,0.5)":"0 4px 16px rgba(0,0,0,0.12)",cursor:"pointer",fontSize:24,fontFamily:FB,fontWeight:800,transition:"all 0.25s ease",border:`2px solid ${C.rose}`,display:"flex",alignItems:"center",justifyContent:"center"}}>
+        {active?"✕":"💙"}
+      </button>
+      {active&&(
+        <div onClick={onToggle} style={{position:"fixed",inset:0,background:"rgba(45,36,32,0.55)",zIndex:98,backdropFilter:"blur(4px)"}}/>
+      )}
+      {active&&(
+        <div style={{position:"fixed",bottom:90,right:20,left:20,maxWidth:400,margin:"0 auto",zIndex:99,background:C.white,borderRadius:22,border:`2px solid ${C.rose}`,padding:"22px",boxShadow:"0 20px 50px rgba(0,0,0,0.25)",animation:"slideUp 0.3s ease"}}>
+          <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14}}>
+            <div style={{fontSize:28}}>💙</div>
+            <div>
+              <div style={{color:C.rose,fontWeight:800,fontSize:17,fontFamily:FD}}>You are not alone</div>
+              <div style={{color:C.textSoft,fontSize:12}}>Free, confidential helplines</div>
+            </div>
+          </div>
+          <div style={{display:"flex",flexDirection:"column",gap:10}}>
+            {[
+              {name:"iCall",num:"9152987821",note:"Mon–Sat, 8am–10pm",color:C.rose},
+              {name:"Vandrevala",num:"1860-2662-345",note:"24/7 · All India",color:C.peach},
+              {name:"NIMHANS",num:"08046110007",note:"24/7 national helpline",color:C.sky},
+              {name:"iCall Email",num:"icall@tiss.edu",note:"Email option",color:C.sage,isEmail:true},
+            ].map(h=>(
+              <a key={h.name} href={h.isEmail?`mailto:${h.num}`:`tel:${h.num.replace(/-/g,"")}`} style={{display:"flex",alignItems:"center",gap:12,padding:"12px 14px",background:h.color+"13",border:`1.5px solid ${h.color}44`,borderRadius:14,textDecoration:"none"}}>
+                <div style={{fontSize:20}}>{h.isEmail?"✉️":"📞"}</div>
+                <div style={{flex:1}}>
+                  <div style={{color:C.text,fontWeight:800,fontSize:14}}>{h.name}</div>
+                  <div style={{color:h.color,fontSize:13,fontWeight:700}}>{h.num}</div>
+                  <div style={{color:C.textSoft,fontSize:11}}>{h.note}</div>
+                </div>
+              </a>
+            ))}
+          </div>
+          <div style={{marginTop:14,padding:"10px 12px",background:C.amberLight,border:`1px solid ${C.amber}33`,borderRadius:12}}>
+            <p style={{color:C.textMid,fontSize:12,lineHeight:1.5}}>🏥 <strong>In an emergency</strong>, go to your nearest hospital or call <a href="tel:112" style={{color:C.rose,fontWeight:800}}>112</a> (India emergency number).</p>
+          </div>
+        </div>
+      )}
+      <style>{`@keyframes slideUp{from{transform:translateY(20px);opacity:0}to{transform:translateY(0);opacity:1}}`}</style>
+    </>
+  );
+}
+
 export default function App(){
   const [step,setStep]=useState(STEP.WELCOME);
   const [who,setWho]=useState("self");
   const [data,setData]=useState({});
-  const reset=()=>{setStep(STEP.WELCOME);setData({});};
+  const [helpOpen,setHelpOpen]=useState(false);
+  const [showResume,setShowResume]=useState(false);
+  const [savedState,setSavedState]=useState(null);
+
+  // Load saved progress on mount
+  useEffect(()=>{
+    try{
+      const raw=window.localStorage?.getItem(SAVE_KEY);
+      if(!raw)return;
+      const parsed=JSON.parse(raw);
+      const ageMs=Date.now()-parsed.savedAt;
+      const ageHours=ageMs/(1000*60*60);
+      if(ageHours>SAVE_EXPIRY_HOURS){
+        window.localStorage.removeItem(SAVE_KEY);
+        return;
+      }
+      if(parsed.step&&SAVEABLE_STEPS.includes(parsed.step)){
+        setSavedState(parsed);
+        setShowResume(true);
+      }
+    }catch(e){/* storage may be unavailable — silently skip */}
+  },[]);
+
+  // Save progress on step/data changes (only for in-progress states)
+  useEffect(()=>{
+    if(showResume)return; // don't overwrite while resume prompt showing
+    try{
+      if(SAVEABLE_STEPS.includes(step)){
+        window.localStorage?.setItem(SAVE_KEY,JSON.stringify({step,who,data,savedAt:Date.now()}));
+      } else if([STEP.RESULT,STEP.EXERCISES,STEP.FAQ,STEP.LEARN].includes(step)){
+        // Completed — clear the saved progress
+        window.localStorage?.removeItem(SAVE_KEY);
+      }
+    }catch(e){}
+  },[step,who,data,showResume]);
+
+  const resumeProgress=()=>{
+    if(savedState){
+      setStep(savedState.step);
+      setWho(savedState.who||"self");
+      setData(savedState.data||{});
+    }
+    setShowResume(false);
+    setSavedState(null);
+  };
+
+  const clearSavedAndStartOver=()=>{
+    try{window.localStorage?.removeItem(SAVE_KEY);}catch(e){}
+    setShowResume(false);
+    setSavedState(null);
+    setStep(STEP.WELCOME);
+    setData({});
+  };
+
+  const reset=()=>{
+    try{window.localStorage?.removeItem(SAVE_KEY);}catch(e){}
+    setStep(STEP.WELCOME);
+    setData({});
+  };
 
   const update=(key,val)=>setData(d=>({...d,[key]:val}));
 
@@ -1172,11 +1301,19 @@ export default function App(){
         ::-webkit-scrollbar{width:4px;}::-webkit-scrollbar-track{background:transparent;}::-webkit-scrollbar-thumb{background:#e0d0c8;border-radius:2px;}
       `}</style>
       <BgDecor/>
-      <div style={{position:"relative",zIndex:1,maxWidth:440,margin:"0 auto",padding:"28px 20px 60px"}}>
+      <HelpNowButton active={helpOpen} onToggle={()=>setHelpOpen(h=>!h)}/>
+      <div style={{position:"relative",zIndex:1,maxWidth:440,margin:"0 auto",padding:"28px 20px 90px"}}>
+        {showResume ? (
+          <ResumePrompt savedAt={savedState?.savedAt||Date.now()} onResume={resumeProgress} onStartOver={clearSavedAndStartOver}/>
+        ) : (
+        <>
         {step!==STEP.WELCOME&&(
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:28}}>
             <div style={{fontFamily:FD,color:C.peach,fontWeight:700,fontSize:20}}>🌸 ManaScreen</div>
-            {[STEP.RESULT,STEP.EXERCISES,STEP.FAQ,STEP.LEARN].includes(step)&&<button onClick={reset} style={{background:"none",border:"none",color:C.textSoft,cursor:"pointer",fontSize:13,fontFamily:FB}}>Start over</button>}
+            <div style={{display:"flex",gap:12,alignItems:"center"}}>
+              {SAVEABLE_STEPS.includes(step)&&<span style={{color:C.sage,fontSize:11,fontWeight:700,display:"flex",alignItems:"center",gap:4}}>💾 Auto-saved</span>}
+              {[STEP.RESULT,STEP.EXERCISES,STEP.FAQ,STEP.LEARN].includes(step)&&<button onClick={reset} style={{background:"none",border:"none",color:C.textSoft,cursor:"pointer",fontSize:13,fontFamily:FB}}>Start over</button>}
+            </div>
           </div>
         )}
 
@@ -1245,6 +1382,8 @@ export default function App(){
         {step===STEP.EXERCISES && <ExercisesScreen onDone={()=>setStep(STEP.RESULT)}/>}
         {step===STEP.FAQ && <FAQScreen phq9={data.phq9||0} gad7={data.gad7||0} onBack={()=>setStep(STEP.RESULT)}/>}
         {step===STEP.LEARN && <LearnScreen onBack={()=>setStep(STEP.RESULT)}/>}
+        </>
+        )}
       </div>
     </div>
   );
