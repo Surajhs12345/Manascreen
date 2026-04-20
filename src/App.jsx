@@ -130,6 +130,151 @@ const PHQ9_DOMAINS = {
   safety:       {label:"Safety",           icon:"💙", color:C.rose},
 };
 
+/* ─── Mood-affecting medications ────────────────────────────────── */
+const MOOD_AFFECTING_MEDS = [
+  {key:"isotretinoin",label:"Isotretinoin (Accutane, for acne)",note:"Well-documented association with depression and suicidal ideation",severity:"high"},
+  {key:"steroids",label:"Steroids / corticosteroids (prednisolone, etc.)",note:"Can cause mood swings, depression, mania, psychosis — especially at high doses",severity:"high"},
+  {key:"betablockers",label:"Beta blockers (propranolol, atenolol, metoprolol)",note:"Can cause fatigue and low mood; some patients experience depression",severity:"moderate"},
+  {key:"hormonal",label:"Hormonal contraceptives",note:"Can affect mood in susceptible individuals",severity:"moderate"},
+  {key:"interferon",label:"Interferon (hepatitis or MS treatment)",note:"Strongly associated with depression — monitoring required",severity:"high"},
+  {key:"antiepileptic",label:"Anti-epileptic medications",note:"Some (levetiracetam, topiramate) can cause mood changes",severity:"moderate"},
+  {key:"antimalarial",label:"Antimalarials (mefloquine)",note:"Known neuropsychiatric side effects",severity:"high"},
+  {key:"thyroid",label:"Thyroid medications (if over/under-replaced)",note:"Incorrect dosing can mimic depression or anxiety",severity:"moderate"},
+  {key:"other",label:"Other (I'm not sure / prefer to list)",note:"",severity:"low"},
+];
+
+/* ─── Clinical logic: differential, ICD, tier, med flags ────────── */
+function buildClinicalImpression(data){
+  const {phq9=0,gad7=0,phq15=0,mdq,trauma,psychosis,sleep,duration,medical,functional,safety,meds}=data;
+  const functionalAvg=functional?Math.round(Object.values(functional).filter(v=>v!==null).reduce((a,b)=>a+b,0)/(Object.values(functional).filter(v=>v!==null).length||1)):0;
+  const chronicity=["chronic","longterm"].includes(duration?.duration);
+  const acute=["acute","subacute"].includes(duration?.duration);
+
+  /* ── Primary impression ─────────────────────────────────────── */
+  const diffs=[];
+  let primary="",icd11="",dsm5="";
+  const sev=phq9<=4?"minimal":phq9<=9?"mild":phq9<=14?"moderate":phq9<=19?"moderately severe":"severe";
+  const anxSev=gad7<=4?"minimal":gad7<=9?"mild":gad7<=14?"moderate":"severe";
+
+  if(mdq?.positive){
+    primary=`Positive screen for bipolar spectrum, with current depressive features (${sev})`;
+    icd11="6A60–6A61 (Bipolar type I/II, current depressive episode)";
+    dsm5="Bipolar I/II Disorder, current depressive episode";
+    diffs.push("Bipolar depression — requires mood stabiliser before antidepressant");
+    diffs.push("Unipolar major depression with irritability");
+    diffs.push("Substance/medication-induced mood disorder");
+  } else if(phq9>=10 && gad7>=10){
+    primary=`Mixed depressive and anxiety features (${sev} depression, ${anxSev} anxiety)`;
+    icd11="6A70 (Depressive disorder) + 6B00 (Generalised anxiety disorder), OR 6A73 (Mixed depressive and anxiety disorder)";
+    dsm5="Major Depressive Disorder + Generalised Anxiety Disorder (comorbid)";
+    diffs.push("Primary MDD with comorbid GAD (most likely)");
+    diffs.push("Primary anxiety disorder with secondary depression");
+    diffs.push("Adjustment disorder with mixed features (if acute onset)");
+    if(medical?.thyroid==="Yes") diffs.push("Thyroid dysfunction contributing to presentation — verify recent TFT");
+  } else if(phq9>=10){
+    primary=chronicity?`Persistent depressive features (${sev}) — likely MDD or persistent depressive disorder`:`${sev.charAt(0).toUpperCase()+sev.slice(1)} depressive episode`;
+    icd11=chronicity?"6A71 (Dysthymic disorder) or 6A70 (Depressive disorder, recurrent)":"6A70 (Depressive disorder, single episode)";
+    dsm5=chronicity?"Major Depressive Disorder (recurrent) or Persistent Depressive Disorder":"Major Depressive Disorder, single episode";
+    diffs.push("Major depressive disorder (most likely)");
+    if(chronicity) diffs.push("Persistent depressive disorder (dysthymia)");
+    if(acute) diffs.push("Adjustment disorder with depressed mood");
+    diffs.push("Bipolar depression — re-screen with MDQ if not done");
+    if(medical?.thyroid==="Yes") diffs.push("Hypothyroidism-associated depression — verify TFT");
+    if(medical?.substances==="Yes") diffs.push("Substance-induced mood disorder — assess AUDIT-C");
+  } else if(gad7>=10){
+    primary=`${anxSev.charAt(0).toUpperCase()+anxSev.slice(1)} anxiety presentation`;
+    icd11="6B00 (Generalised anxiety disorder) — consider 6B01 (Panic disorder) if panic attacks";
+    dsm5="Generalised Anxiety Disorder";
+    diffs.push("Generalised anxiety disorder (most likely)");
+    diffs.push("Panic disorder — ask about discrete panic attacks");
+    diffs.push("Social anxiety disorder — if anxiety is situational");
+    if(medical?.thyroid==="Yes") diffs.push("Hyperthyroidism-associated anxiety — verify TFT");
+    if(trauma?.positive) diffs.push("PTSD-related hyperarousal");
+  } else if(phq9>=5 || gad7>=5){
+    primary=`Mild mixed symptoms — subthreshold for full diagnosis`;
+    icd11="QD85 (Other specified symptoms) or MB24 (Other specified mental/behavioural symptoms)";
+    dsm5="Other Specified Depressive Disorder or Adjustment Disorder";
+    diffs.push("Adjustment disorder — most likely if stressor identified");
+    diffs.push("Subthreshold depression or anxiety");
+    diffs.push("Early presentation — may evolve; repeat in 2 weeks");
+  } else {
+    primary="No significant depressive or anxiety symptoms";
+    icd11="Z00.0 (General medical examination) — no diagnosis";
+    dsm5="No mental disorder on screening";
+    diffs.push("Normal variation");
+    diffs.push("Consider repeating if clinical suspicion persists");
+  }
+
+  if(trauma?.positive){
+    diffs.push("Post-traumatic stress disorder — PC-PTSD-5 positive");
+  }
+  if(psychosis?.flag){
+    diffs.push("Psychotic features — requires urgent psychiatric evaluation");
+  }
+  if(phq15>=10){
+    diffs.push("Somatic symptom component — consider PHQ-15 elevation in formulation");
+  }
+  if(sleep?.poor){
+    diffs.push("Primary sleep disorder — consider independent sleep evaluation");
+  }
+
+  /* ── Treatment intensity tier ───────────────────────────────── */
+  const cssrsHigh=safety?.level>=3;
+  const suicidalityAny=safety?.level>=1;
+  const severeDep=phq9>=20;
+  const severeAnx=gad7>=15;
+  const highFunc=functionalAvg>=7;
+
+  let tier={},tierDetail={};
+  if(cssrsHigh||(severeDep&&suicidalityAny)||psychosis?.flag){
+    tier={level:5,label:"Urgent care",color:C.rose,icon:"🚨"};
+    tierDetail={
+      action:"Same-day psychiatric evaluation",
+      path:"Emergency department or crisis helpline today — do not wait",
+      modality:"In-person psychiatric assessment, safety planning, possible admission",
+    };
+  } else if(severeDep||severeAnx||highFunc||mdq?.positive||chronicity&&phq9>=15){
+    tier={level:4,label:"Specialist referral",color:C.peach,icon:"🏥"};
+    tierDetail={
+      action:"Psychiatrist referral within 1–2 weeks",
+      path:"Direct psychiatric consultation recommended",
+      modality:"Medication evaluation + psychotherapy; regular follow-up",
+    };
+  } else if(phq9>=10||gad7>=10||functionalAvg>=5){
+    tier={level:3,label:"GP-led treatment",color:C.amber,icon:"🩺"};
+    tierDetail={
+      action:"GP or family physician consultation within 2 weeks",
+      path:"Primary care with option to refer if no improvement in 6–8 weeks",
+      modality:"SSRI first-line + brief psychological intervention or CBT",
+    };
+  } else if(phq9>=5||gad7>=5){
+    tier={level:2,label:"Counselling / guided self-help",color:C.sky,icon:"🤝"};
+    tierDetail={
+      action:"Counsellor or psychologist within 2–4 weeks",
+      path:"Psychological intervention without medication, structured self-help",
+      modality:"CBT-based counselling, digital CBT, regular self-monitoring",
+    };
+  } else {
+    tier={level:1,label:"Watchful waiting",color:C.sage,icon:"🌱"};
+    tierDetail={
+      action:"Self-care and monitoring",
+      path:"Re-screen in 2–4 weeks; seek help if symptoms worsen",
+      modality:"Lifestyle, sleep hygiene, social connection, stress management",
+    };
+  }
+
+  /* ── Medication flags ─────────────────────────────────────── */
+  const medFlags=[];
+  if(meds && Array.isArray(meds.selected)){
+    meds.selected.forEach(key=>{
+      const m=MOOD_AFFECTING_MEDS.find(x=>x.key===key);
+      if(m) medFlags.push(m);
+    });
+  }
+
+  return {primary,icd11,dsm5,diffs:diffs.slice(0,5),tier,tierDetail,medFlags,chronicity,acute};
+}
+
 /* ─── Shared UI ─────────────────────────────────────────────────── */
 function Fade({children,delay=0}){
   const [v,setV]=useState(false);
@@ -1146,7 +1291,7 @@ function ComparisonCard({phq9,gad7}){
 
 /* ─── Results screen ─────────────────────────────────────────────── */
 function ResultScreen({data,history,onExercises,onFAQ,onLearn,onPDF,onRetake}){
-  const {phq9,gad7,phq9answers,gad7answers,phq15,mdq,trauma,sleep,psychosis,functional,medical,duration,profile,safety}=data;
+  const {phq9,gad7,phq9answers,gad7answers,phq15,mdq,trauma,sleep,psychosis,functional,medical,duration,profile,safety,meds}=data;
   const dep=phq9<=4?{label:"Minimal",color:C.sage,icon:"🌱"}:phq9<=9?{label:"Mild",color:C.sky,icon:"🌤️"}:phq9<=14?{label:"Moderate",color:C.amber,icon:"🌧️"}:phq9<=19?{label:"Moderately Severe",color:C.peach,icon:"🌩️"}:{label:"Severe",color:C.rose,icon:"⛈️"};
   const anx=gad7<=4?{label:"Minimal",color:C.sage,icon:"🌱"}:gad7<=9?{label:"Mild",color:C.sky,icon:"🌤️"}:gad7<=14?{label:"Moderate",color:C.amber,icon:"🌧️"}:{label:"Severe",color:C.rose,icon:"⛈️"};
   const isCrisis=phq9>=20||gad7>=15||safety?.level>=3;
@@ -1159,6 +1304,8 @@ function ResultScreen({data,history,onExercises,onFAQ,onLearn,onPDF,onRetake}){
   const chronicDuration=["chronic","longterm"].includes(duration?.duration);
   const functionalAvg=functional?Math.round(Object.values(functional).filter(v=>v!==null).reduce((a,b)=>a+b,0)/3):null;
   const nextStep=getActionableNextStep(phq9,gad7,duration,medical);
+  const [showClinical,setShowClinical]=useState(false);
+  const clinical=buildClinicalImpression(data);
 
   return(
     <div>
@@ -1235,7 +1382,81 @@ function ResultScreen({data,history,onExercises,onFAQ,onLearn,onPDF,onRetake}){
         </Fade>
       )}
 
+      {/* Treatment intensity tier */}
+      <Fade delay={340}>
+        <Card style={{marginBottom:14,background:clinical.tier.color+"10",border:`2px solid ${clinical.tier.color}66`}}>
+          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
+            <span style={{fontSize:22}}>{clinical.tier.icon}</span>
+            <div style={{color:C.textSoft,fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:1.2}}>Recommended care pathway</div>
+          </div>
+          <p style={{color:clinical.tier.color,fontWeight:800,fontSize:17,fontFamily:FD,marginBottom:10}}>Tier {clinical.tier.level} · {clinical.tier.label}</p>
+          <div style={{fontSize:13,color:C.textMid,lineHeight:1.7}}>
+            <div style={{marginBottom:4}}><strong>What:</strong> {clinical.tierDetail.action}</div>
+            <div style={{marginBottom:4}}><strong>Where:</strong> {clinical.tierDetail.path}</div>
+            <div><strong>Typical approach:</strong> {clinical.tierDetail.modality}</div>
+          </div>
+        </Card>
+      </Fade>
+
+      {/* Medication flags */}
+      {clinical.medFlags.length>0 && (
+        <Fade delay={370}>
+          <Card style={{marginBottom:14,background:C.tealLight,border:`2px solid ${C.teal}55`}}>
+            <div style={{color:C.teal,fontSize:13,fontWeight:800,marginBottom:10}}>💊 Medication interaction notes</div>
+            <p style={{color:C.textMid,fontSize:12,lineHeight:1.65,marginBottom:10,fontStyle:"italic"}}>Some of your medications can affect mood. Share these with your doctor — <strong>do not stop any medication without medical advice.</strong></p>
+            {clinical.medFlags.map((m,i)=>(
+              <div key={i} style={{padding:"10px 0",borderBottom:i<clinical.medFlags.length-1?`1px solid ${C.border}`:"none"}}>
+                <div style={{fontWeight:800,fontSize:13,color:m.severity==="high"?C.rose:C.amber,marginBottom:3}}>
+                  {m.severity==="high"?"⚠️":"💛"} {m.label}
+                </div>
+                {m.note && <div style={{color:C.textMid,fontSize:12,lineHeight:1.55}}>{m.note}</div>}
+              </div>
+            ))}
+          </Card>
+        </Fade>
+      )}
+
+      {/* Clinical impression toggle (for doctor or curious patient) */}
       <Fade delay={400}>
+        <button onClick={()=>setShowClinical(s=>!s)} style={{width:"100%",padding:"14px 18px",background:C.indigoLight,border:`1.5px solid ${C.indigo}44`,borderRadius:16,cursor:"pointer",fontFamily:FB,display:"flex",alignItems:"center",gap:10,marginBottom:showClinical?10:14}}>
+          <span style={{fontSize:20}}>🩺</span>
+          <div style={{flex:1,textAlign:"left"}}>
+            <div style={{color:C.indigo,fontWeight:800,fontSize:13}}>Clinical impression (for your doctor)</div>
+            <div style={{color:C.textSoft,fontSize:11}}>ICD-11, DSM-5, differentials — tap to {showClinical?"hide":"view"}</div>
+          </div>
+          <span style={{color:C.indigo,fontSize:18,transform:showClinical?"rotate(90deg)":"rotate(0)",transition:"transform 0.2s"}}>›</span>
+        </button>
+        {showClinical && (
+          <Card style={{marginBottom:14,padding:"18px 20px"}}>
+            <div style={{marginBottom:12}}>
+              <div style={{color:C.textSoft,fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>Primary impression</div>
+              <p style={{color:C.text,fontWeight:700,fontSize:14,lineHeight:1.55,fontFamily:FD}}>{clinical.primary}</p>
+            </div>
+            <div style={{marginBottom:12,padding:"10px 12px",background:C.bg,borderRadius:10}}>
+              <div style={{color:C.textSoft,fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>ICD-11</div>
+              <p style={{color:C.textMid,fontSize:13,lineHeight:1.55,fontFamily:"monospace"}}>{clinical.icd11}</p>
+            </div>
+            <div style={{marginBottom:12,padding:"10px 12px",background:C.bg,borderRadius:10}}>
+              <div style={{color:C.textSoft,fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:1,marginBottom:4}}>DSM-5</div>
+              <p style={{color:C.textMid,fontSize:13,lineHeight:1.55,fontFamily:"monospace"}}>{clinical.dsm5}</p>
+            </div>
+            <div>
+              <div style={{color:C.textSoft,fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:1,marginBottom:6}}>Differentials to rule out</div>
+              {clinical.diffs.map((d,i)=>(
+                <div key={i} style={{display:"flex",gap:8,marginBottom:4}}>
+                  <span style={{color:C.indigo,fontWeight:800,fontSize:12}}>{i+1}.</span>
+                  <span style={{color:C.textMid,fontSize:13,lineHeight:1.55}}>{d}</span>
+                </div>
+              ))}
+            </div>
+            <div style={{marginTop:14,padding:"10px 12px",background:C.amberLight,border:`1px solid ${C.amber}33`,borderRadius:10}}>
+              <p style={{color:C.textMid,fontSize:11,lineHeight:1.55,fontStyle:"italic"}}>This is an automated impression based on screening responses. It is not a diagnosis. Clinical correlation and formal assessment by a qualified professional are essential.</p>
+            </div>
+          </Card>
+        )}
+      </Fade>
+
+      <Fade delay={440}>
         <div style={{background:C.amberLight,border:`1px solid ${C.amber}33`,borderRadius:14,padding:"12px 14px",marginBottom:18}}>
           <p style={{color:C.textMid,fontSize:12,lineHeight:1.65}}>⚠️ <strong>Reminder:</strong> This is a screening aid, not a clinical diagnosis. Always discuss results with a qualified professional.</p>
         </div>
@@ -1280,11 +1501,12 @@ function FlagRow({icon,color,title,text}){
 
 /* ─── PDF Report (printable HTML page) ───────────────────────────── */
 function PDFReport({data,history,onBack}){
-  const {phq9,gad7,phq9answers,gad7answers,phq15,mdq,trauma,sleep,psychosis,functional,medical,duration,profile,safety}=data;
+  const {phq9,gad7,phq9answers,gad7answers,phq15,mdq,trauma,sleep,psychosis,functional,medical,duration,profile,safety,meds}=data;
   const dep=phq9<=4?"Minimal":phq9<=9?"Mild":phq9<=14?"Moderate":phq9<=19?"Moderately Severe":"Severe";
   const anx=gad7<=4?"Minimal":gad7<=9?"Mild":gad7<=14?"Moderate":"Severe";
   const functionalAvg=functional?Math.round(Object.values(functional).filter(v=>v!==null).reduce((a,b)=>a+b,0)/3):null;
   const date=new Date().toLocaleDateString('en-IN',{day:'numeric',month:'long',year:'numeric'});
+  const clinical=buildClinicalImpression(data);
 
   const handlePrint=()=>{
     window.print();
@@ -1329,6 +1551,41 @@ function PDFReport({data,history,onBack}){
             </tbody>
           </table>
         </section>
+
+        <section style={{marginBottom:14,background:C.indigoLight,borderRadius:10,padding:"12px 14px"}}>
+          <h2 style={{fontSize:13,fontWeight:800,textTransform:"uppercase",letterSpacing:1,color:C.indigo,marginBottom:8}}>Clinical Impression (Automated)</h2>
+          <p style={{fontSize:13,lineHeight:1.7,marginBottom:8}}><strong>Primary:</strong> {clinical.primary}</p>
+          <p style={{fontSize:12,lineHeight:1.65,marginBottom:6,fontFamily:"monospace"}}><strong>ICD-11:</strong> {clinical.icd11}</p>
+          <p style={{fontSize:12,lineHeight:1.65,marginBottom:10,fontFamily:"monospace"}}><strong>DSM-5:</strong> {clinical.dsm5}</p>
+          <div>
+            <div style={{fontWeight:700,fontSize:12,marginBottom:4}}>Differentials to consider:</div>
+            <ul style={{fontSize:12,lineHeight:1.7,paddingLeft:18,margin:0}}>
+              {clinical.diffs.map((d,i)=><li key={i}>{d}</li>)}
+            </ul>
+          </div>
+        </section>
+
+        <section style={{marginBottom:14,background:clinical.tier.color+"15",borderRadius:10,padding:"12px 14px",border:`1.5px solid ${clinical.tier.color}55`}}>
+          <h2 style={{fontSize:13,fontWeight:800,textTransform:"uppercase",letterSpacing:1,color:clinical.tier.color,marginBottom:8}}>Recommended Care Pathway</h2>
+          <p style={{fontSize:14,fontWeight:800,marginBottom:8}}>Tier {clinical.tier.level}: {clinical.tier.label}</p>
+          <table style={{width:"100%",fontSize:12,lineHeight:1.75}}>
+            <tbody>
+              <tr><td style={{width:"30%",verticalAlign:"top"}}><strong>Action:</strong></td><td>{clinical.tierDetail.action}</td></tr>
+              <tr><td style={{verticalAlign:"top"}}><strong>Setting:</strong></td><td>{clinical.tierDetail.path}</td></tr>
+              <tr><td style={{verticalAlign:"top"}}><strong>Approach:</strong></td><td>{clinical.tierDetail.modality}</td></tr>
+            </tbody>
+          </table>
+        </section>
+
+        {clinical.medFlags.length>0 && (
+          <section style={{marginBottom:14,background:C.tealLight,borderRadius:10,padding:"12px 14px",border:`1.5px solid ${C.teal}55`}}>
+            <h2 style={{fontSize:13,fontWeight:800,textTransform:"uppercase",letterSpacing:1,color:C.teal,marginBottom:8}}>⚠️ Medications Affecting Mood</h2>
+            <p style={{fontSize:11,fontStyle:"italic",color:C.textMid,marginBottom:8}}>Patient is taking medications that may contribute to mood symptoms. Consider in clinical formulation.</p>
+            <ul style={{fontSize:12,lineHeight:1.7,paddingLeft:18,margin:0}}>
+              {clinical.medFlags.map((m,i)=><li key={i}><strong>{m.label}</strong>{m.note?` — ${m.note}`:""}</li>)}
+            </ul>
+          </section>
+        )}
 
         {(mdq?.positive||trauma?.positive||psychosis?.flag||sleep?.poor||phq15>=10)&&(
           <section style={{marginBottom:14,background:C.amberLight,borderRadius:10,padding:"12px 14px"}}>
@@ -1510,43 +1767,234 @@ function HelpNowButton({active,onToggle}){
   );
 }
 
+/* ─── Quick Check (PHQ-2 + GAD-2) ───────────────────────────────── */
+const PHQ2 = [PHQ9[0], PHQ9[1]]; // first 2 PHQ-9 items
+const GAD2 = [GAD7[0], GAD7[1]]; // first 2 GAD-7 items
+
+function QuickCheckScreen({onComplete,onBack,onGoFull}){
+  const [phase,setPhase]=useState("intro");
+  const [phq2Answers,setPhq2Answers]=useState([]);
+  const [gad2Answers,setGad2Answers]=useState([]);
+  const [done,setDone]=useState(false);
+
+  if(phase==="intro")return(
+    <div>
+      <BackBar onBack={onBack}/>
+      <Fade>
+        <div style={{textAlign:"center",marginBottom:24}}>
+          <div style={{fontSize:52,marginBottom:10}}>⚡</div>
+          <Pill color={C.teal}>Quick Check</Pill>
+          <h2 style={{fontFamily:FD,fontSize:24,color:C.text,margin:"12px 0 8px"}}>Just 4 questions, 90 seconds</h2>
+          <p style={{color:C.textMid,fontSize:14,lineHeight:1.75}}>A brief check using PHQ-2 and GAD-2 — the ultra-short validated versions of the full screens.</p>
+        </div>
+        <Card style={{marginBottom:14,background:C.tealLight,border:`1.5px solid ${C.teal}44`}}>
+          <p style={{color:C.teal,fontSize:13,fontWeight:700,lineHeight:1.6,marginBottom:6}}>🌿 If anything stands out, you can go deeper</p>
+          <p style={{color:C.textMid,fontSize:13,lineHeight:1.65}}>If your quick check suggests something worth exploring, you'll have the option to do the full 15-minute assessment for a detailed picture.</p>
+        </Card>
+        <WarmButton onClick={()=>setPhase("phq2")} variant="teal">Start quick check →</WarmButton>
+        <button onClick={onGoFull} style={{display:"block",margin:"14px auto 0",background:"none",border:"none",color:C.textSoft,cursor:"pointer",fontSize:13,fontFamily:FB,textDecoration:"underline"}}>Or skip to the full 15-min assessment</button>
+      </Fade>
+    </div>
+  );
+
+  if(phase==="phq2")return(
+    <LikertScreen questions={PHQ2} code="PHQ-2" color={C.sky} bgColor={C.skyLight} sectionTitle="Mood (brief)" options={FREQ4}
+      onBack={()=>setPhase("intro")} allowSkip={false}
+      onComplete={(score,answers)=>{setPhq2Answers(answers);setPhase("gad2");}}/>
+  );
+
+  if(phase==="gad2")return(
+    <LikertScreen questions={GAD2} code="GAD-2" color={C.sage} bgColor={C.sageLight} sectionTitle="Worry (brief)" options={FREQ4}
+      onBack={()=>setPhase("phq2")} allowSkip={false}
+      onComplete={(score,answers)=>{
+        setGad2Answers(answers);
+        const phq2=phq2Answers.reduce((a,b)=>a+(b==="skip"?0:b),0);
+        const gad2=score;
+        onComplete({phq2,gad2,phq2Answers,gad2Answers:answers});
+      }}/>
+  );
+  return null;
+}
+
+function QuickCheckResult({phq2,gad2,onGoFull,onDone,onHelp}){
+  // PHQ-2 ≥3 = positive screen for depression
+  // GAD-2 ≥3 = positive screen for anxiety
+  const depPositive=phq2>=3;
+  const anxPositive=gad2>=3;
+  const anyPositive=depPositive||anxPositive;
+
+  return(
+    <div>
+      <Fade>
+        <div style={{textAlign:"center",marginBottom:22}}>
+          <div style={{fontSize:48,marginBottom:10}}>{anyPositive?"🌿":"🌸"}</div>
+          <Pill color={C.teal}>Quick check complete</Pill>
+          <h2 style={{fontFamily:FD,fontSize:24,color:C.text,margin:"12px 0 8px"}}>
+            {anyPositive?"Worth looking deeper":"Good news"}
+          </h2>
+        </div>
+      </Fade>
+
+      <Fade delay={150}>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:16}}>
+          <Card style={{textAlign:"center",background:depPositive?C.amberLight:C.sageLight,border:`1.5px solid ${depPositive?C.amber:C.sage}44`,padding:"16px 12px"}}>
+            <div style={{color:C.textSoft,fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:1}}>PHQ-2 (Mood)</div>
+            <div style={{color:depPositive?C.amber:C.sage,fontWeight:800,fontSize:20,margin:"2px 0"}}>{phq2}<span style={{fontSize:11,color:C.textMuted}}>/6</span></div>
+            <div style={{fontSize:11,color:depPositive?C.amber:C.sage,fontWeight:700}}>{depPositive?"Positive":"Negative"}</div>
+          </Card>
+          <Card style={{textAlign:"center",background:anxPositive?C.amberLight:C.sageLight,border:`1.5px solid ${anxPositive?C.amber:C.sage}44`,padding:"16px 12px"}}>
+            <div style={{color:C.textSoft,fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:1}}>GAD-2 (Worry)</div>
+            <div style={{color:anxPositive?C.amber:C.sage,fontWeight:800,fontSize:20,margin:"2px 0"}}>{gad2}<span style={{fontSize:11,color:C.textMuted}}>/6</span></div>
+            <div style={{fontSize:11,color:anxPositive?C.amber:C.sage,fontWeight:700}}>{anxPositive?"Positive":"Negative"}</div>
+          </Card>
+        </div>
+      </Fade>
+
+      <Fade delay={250}>
+        <Card style={{marginBottom:16,background:anyPositive?C.amberLight:C.sageLight,border:`1.5px solid ${anyPositive?C.amber:C.sage}44`}}>
+          {anyPositive?(
+            <>
+              <div style={{color:C.amber,fontWeight:800,fontSize:14,marginBottom:8}}>💛 Your brief screen is positive</div>
+              <p style={{color:C.textMid,fontSize:13,lineHeight:1.7,marginBottom:8}}>The PHQ-2 and GAD-2 are designed to be sensitive — they flag anything worth looking into. Your result suggests it's worth doing the full 15-minute assessment to get a complete picture.</p>
+              <p style={{color:C.textMid,fontSize:13,lineHeight:1.7}}>The full assessment will give you detailed scores, clinical flags, a treatment tier, and a shareable report for your doctor.</p>
+            </>
+          ):(
+            <>
+              <div style={{color:C.sage,fontWeight:800,fontSize:14,marginBottom:8}}>🌱 No significant flags on the brief screen</div>
+              <p style={{color:C.textMid,fontSize:13,lineHeight:1.7}}>You can still do the full assessment if you'd like a detailed picture, or just come back anytime you want to check in.</p>
+            </>
+          )}
+        </Card>
+      </Fade>
+
+      <Fade delay={320}>
+        <div style={{display:"flex",flexDirection:"column",gap:10}}>
+          {anyPositive?(
+            <>
+              <WarmButton onClick={onGoFull} variant="primary">Do the full assessment →</WarmButton>
+              <WarmButton onClick={onDone} variant="secondary">Not today, just finish</WarmButton>
+            </>
+          ):(
+            <>
+              <WarmButton onClick={onGoFull} variant="secondary">Do the full assessment anyway</WarmButton>
+              <WarmButton onClick={onDone} variant="ghost">Finish here</WarmButton>
+            </>
+          )}
+          <button onClick={onHelp} style={{background:"none",border:"none",color:C.rose,cursor:"pointer",fontSize:13,fontFamily:FB,fontWeight:700,marginTop:6}}>💙 I want to talk to someone now</button>
+        </div>
+      </Fade>
+
+      <Fade delay={400}>
+        <div style={{background:C.amberLight,border:`1px solid ${C.amber}33`,borderRadius:12,padding:"12px 14px",marginTop:16}}>
+          <p style={{color:C.textMid,fontSize:12,lineHeight:1.65}}>⚠️ The PHQ-2/GAD-2 are screening tools. A negative result doesn't mean you have no concerns — it just means the brief screen didn't flag anything. Trust how you feel.</p>
+        </div>
+      </Fade>
+    </div>
+  );
+}
+
+/* ─── Medications screen ────────────────────────────────────────── */
+function MedicationsScreen({onComplete,onBack,initial}){
+  const [selected,setSelected]=useState(initial?.selected||[]);
+  const [other,setOther]=useState(initial?.other||"");
+  const toggle=(key)=>setSelected(s=>s.includes(key)?s.filter(x=>x!==key):[...s,key]);
+
+  return(
+    <div>
+      <BackBar onBack={onBack}/>
+      <Fade>
+        <Pill color={C.teal}>Medication Review</Pill>
+        <h2 style={{fontFamily:FD,fontSize:22,color:C.text,margin:"12px 0 8px"}}>Any of these medications?</h2>
+        <p style={{color:C.textMid,fontSize:14,lineHeight:1.75,marginBottom:14}}>Some medications can affect mood or be mistaken for mental health symptoms. Please select any you're taking.</p>
+        <div style={{background:C.tealLight,border:`1.5px solid ${C.teal}44`,borderRadius:14,padding:"12px 16px",marginBottom:20}}>
+          <p style={{color:C.teal,fontSize:13,fontWeight:700,lineHeight:1.6}}>💊 This is important for your doctor to know — please don't stop any medication without talking to your doctor first.</p>
+        </div>
+      </Fade>
+      <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:16}}>
+        {MOOD_AFFECTING_MEDS.map((m,i)=>(
+          <Fade key={m.key} delay={i*40}>
+            <button onClick={()=>toggle(m.key)} style={{display:"flex",gap:12,padding:"13px 16px",borderRadius:14,border:`2px solid ${selected.includes(m.key)?C.teal:C.border}`,background:selected.includes(m.key)?C.tealLight:C.card,cursor:"pointer",textAlign:"left",width:"100%",fontFamily:FB,alignItems:"center"}}>
+              <div style={{width:22,height:22,borderRadius:7,border:`2px solid ${selected.includes(m.key)?C.teal:C.border}`,background:selected.includes(m.key)?C.teal:"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                {selected.includes(m.key)&&<span style={{color:C.white,fontSize:12,fontWeight:800}}>✓</span>}
+              </div>
+              <div style={{flex:1}}>
+                <div style={{color:C.text,fontWeight:700,fontSize:13,lineHeight:1.4}}>{m.label}</div>
+              </div>
+            </button>
+          </Fade>
+        ))}
+      </div>
+      {selected.includes("other")&&(
+        <Fade>
+          <input value={other} onChange={e=>setOther(e.target.value)} placeholder="Any other medications (optional, for your records)"
+            style={{width:"100%",padding:"12px 14px",borderRadius:12,border:`1.5px solid ${C.border}`,background:C.card,color:C.text,fontSize:13,fontFamily:FB,outline:"none",marginBottom:16}}/>
+        </Fade>
+      )}
+      <button onClick={()=>{setSelected([]);setOther("");}} style={{display:"block",margin:"0 auto 16px",background:"none",border:"none",color:C.textSoft,cursor:"pointer",fontSize:12,fontFamily:FB,fontStyle:"italic",textDecoration:"underline"}}>None of these / clear selection</button>
+      <WarmButton onClick={()=>onComplete({selected,other})} variant="teal">Continue →</WarmButton>
+    </div>
+  );
+}
+
 /* ─── Welcome ────────────────────────────────────────────────────── */
-function WelcomeScreen({onNext,onPrivacy,onRefs}){
+/* ─── Welcome ────────────────────────────────────────────────────── */
+function WelcomeScreen({onQuick,onFull,onPrivacy,onRefs}){
   return(
     <div style={{textAlign:"center",paddingTop:20}}>
       <Fade>
         <div style={{fontSize:64,marginBottom:10}}>🌸</div>
         <h1 style={{fontFamily:FD,fontSize:34,fontWeight:700,color:C.text,marginBottom:4}}>ManaScreen</h1>
         <p style={{color:C.textSoft,fontSize:12,letterSpacing:2,textTransform:"uppercase",fontWeight:700,marginBottom:6}}>Mental Wellness Assessment</p>
-        <p style={{color:C.textMuted,fontSize:11,marginBottom:24}}>DSM-5 aligned · Private · Free</p>
+        <p style={{color:C.textMuted,fontSize:11,marginBottom:22}}>DSM-5 & ICD-11 aligned · Private · Free</p>
       </Fade>
-      <Fade delay={180}>
-        <Card style={{marginBottom:14,background:C.peachLight,border:`1.5px solid ${C.peach}33`}}>
+      <Fade delay={150}>
+        <Card style={{marginBottom:16,background:C.peachLight,border:`1.5px solid ${C.peach}33`}}>
           <p style={{fontFamily:FD,color:C.textMid,fontSize:15,lineHeight:1.85,fontStyle:"italic"}}>"You've taken the first step just by being here. This is a safe, private space — just for you."</p>
         </Card>
       </Fade>
-      <Fade delay={280}>
-        <div style={{display:"flex",flexDirection:"column",gap:9,marginBottom:20}}>
+
+      <Fade delay={250}>
+        <div style={{textAlign:"left",color:C.textSoft,fontSize:12,fontWeight:800,textTransform:"uppercase",letterSpacing:1.2,marginBottom:10}}>How would you like to start?</div>
+        <button onClick={onQuick} style={{width:"100%",padding:"18px 20px",borderRadius:20,border:`2px solid ${C.teal}`,background:`linear-gradient(135deg,${C.tealLight} 0%,#f0fafa 100%)`,cursor:"pointer",textAlign:"left",fontFamily:FB,display:"flex",alignItems:"center",gap:14,marginBottom:10}}>
+          <div style={{width:50,height:50,borderRadius:15,background:C.teal,display:"flex",alignItems:"center",justifyContent:"center",fontSize:26,flexShrink:0}}>⚡</div>
+          <div style={{flex:1}}>
+            <div style={{color:C.teal,fontWeight:800,fontSize:15,marginBottom:2}}>Quick Check (90 seconds)</div>
+            <div style={{color:C.textMid,fontSize:12,lineHeight:1.45}}>4 questions · PHQ-2 + GAD-2 ultra-brief</div>
+          </div>
+          <span style={{color:C.teal,fontSize:22}}>›</span>
+        </button>
+        <button onClick={onFull} style={{width:"100%",padding:"18px 20px",borderRadius:20,border:`2px solid ${C.peach}`,background:`linear-gradient(135deg,${C.peachLight} 0%,#fff4ee 100%)`,cursor:"pointer",textAlign:"left",fontFamily:FB,display:"flex",alignItems:"center",gap:14,marginBottom:18}}>
+          <div style={{width:50,height:50,borderRadius:15,background:C.peach,display:"flex",alignItems:"center",justifyContent:"center",fontSize:26,flexShrink:0}}>📋</div>
+          <div style={{flex:1}}>
+            <div style={{color:C.peach,fontWeight:800,fontSize:15,marginBottom:2}}>Full Assessment (10–15 min)</div>
+            <div style={{color:C.textMid,fontSize:12,lineHeight:1.45}}>Comprehensive · clinical report for your doctor</div>
+          </div>
+          <span style={{color:C.peach,fontSize:22}}>›</span>
+        </button>
+      </Fade>
+
+      <Fade delay={350}>
+        <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:18}}>
           {[
             [C.sage,"🔒","No tracking","No cookies, no analytics, nothing saved"],
-            [C.sky,"⏱️","10–15 minutes","With pause & resume anytime"],
-            [C.peach,"🏥","Clinically validated","PHQ-9, GAD-7, MDQ, C-SSRS & more"],
+            [C.sky,"🏥","Clinically validated","PHQ-9, GAD-7, MDQ, C-SSRS + more"],
             [C.amber,"🌿","Adaptive","Questions adjust to your answers"],
+            [C.lavender,"📄","Shareable","PDF report for your doctor"],
           ].map(([col,icon,title,sub])=>(
-            <div key={title} style={{display:"flex",gap:12,alignItems:"center",padding:"11px 14px",background:col+"13",borderRadius:12,border:`1px solid ${col}30`}}>
-              <span style={{fontSize:20}}>{icon}</span>
-              <div style={{textAlign:"left"}}><div style={{fontWeight:800,color:C.text,fontSize:13}}>{title}</div><div style={{color:C.textSoft,fontSize:12}}>{sub}</div></div>
+            <div key={title} style={{display:"flex",gap:12,alignItems:"center",padding:"10px 12px",background:col+"10",borderRadius:10,border:`1px solid ${col}25`}}>
+              <span style={{fontSize:18}}>{icon}</span>
+              <div style={{textAlign:"left",flex:1}}><div style={{fontWeight:800,color:C.text,fontSize:12}}>{title}</div><div style={{color:C.textSoft,fontSize:11}}>{sub}</div></div>
             </div>
           ))}
         </div>
       </Fade>
-      <Fade delay={380}>
-        <div style={{background:C.roseLight,border:`1.5px solid ${C.rose}44`,borderRadius:14,padding:"14px 16px",marginBottom:18,textAlign:"left"}}>
-          <div style={{color:C.rose,fontWeight:800,fontSize:12,marginBottom:4}}>💙 Need help right now?</div>
-          <div style={{color:C.textMid,fontSize:13,lineHeight:1.7}}>Tap the 💙 button (bottom right) anytime. Or: iCall <strong>9152987821</strong> · Vandrevala <strong>1860-2662-345</strong></div>
+
+      <Fade delay={450}>
+        <div style={{background:C.roseLight,border:`1.5px solid ${C.rose}44`,borderRadius:14,padding:"12px 14px",marginBottom:16,textAlign:"left"}}>
+          <div style={{color:C.rose,fontWeight:800,fontSize:12,marginBottom:3}}>💙 Need help right now?</div>
+          <div style={{color:C.textMid,fontSize:12,lineHeight:1.65}}>Tap the 💙 button anytime. iCall <strong>9152987821</strong> · Vandrevala <strong>1860-2662-345</strong></div>
         </div>
-        <WarmButton onClick={onNext}>Begin Assessment 🌱</WarmButton>
-        <div style={{display:"flex",gap:12,justifyContent:"center",marginTop:14,fontSize:12}}>
+        <div style={{display:"flex",gap:12,justifyContent:"center",fontSize:12}}>
           <button onClick={onPrivacy} style={{background:"none",border:"none",color:C.textSoft,textDecoration:"underline",cursor:"pointer",fontFamily:FB,fontSize:12}}>🔒 Privacy</button>
           <button onClick={onRefs} style={{background:"none",border:"none",color:C.textSoft,textDecoration:"underline",cursor:"pointer",fontFamily:FB,fontSize:12}}>📚 References</button>
         </div>
@@ -1608,8 +2056,10 @@ function ResumePrompt({savedAt,onResume,onStartOver}){
 
 /* ─── ROOT APP ───────────────────────────────────────────────────── */
 const STEP={
-  WELCOME:"welcome", WHO:"who", PROFILE:"profile",
-  MEDICAL:"medical", DURATION:"duration",
+  WELCOME:"welcome",
+  QUICK:"quick", QUICK_RESULT:"quick_result",
+  WHO:"who", PROFILE:"profile",
+  MEDICAL:"medical", MEDS:"meds", DURATION:"duration",
   PHQ9:"phq9", BRIDGE:"bridge", GAD7:"gad7",
   CSSRS:"cssrs",
   TW_PHQ15:"tw_phq15", PHQ15:"phq15",
@@ -1620,7 +2070,7 @@ const STEP={
   RESULT:"result", EXERCISES:"exercises", FAQ:"faq", LEARN:"learn",
   PRIVACY:"privacy", REFS:"refs", PDF:"pdf",
 };
-const SAVEABLE_STEPS=[STEP.WHO,STEP.PROFILE,STEP.MEDICAL,STEP.DURATION,STEP.PHQ9,STEP.BRIDGE,STEP.GAD7,STEP.TW_PHQ15,STEP.PHQ15,STEP.TW_MDQ,STEP.MDQ,STEP.TW_TRAUMA,STEP.TRAUMA,STEP.SLEEP,STEP.PSYCHOSIS,STEP.FUNCTIONAL];
+const SAVEABLE_STEPS=[STEP.WHO,STEP.PROFILE,STEP.MEDICAL,STEP.MEDS,STEP.DURATION,STEP.PHQ9,STEP.BRIDGE,STEP.GAD7,STEP.TW_PHQ15,STEP.PHQ15,STEP.TW_MDQ,STEP.MDQ,STEP.TW_TRAUMA,STEP.TRAUMA,STEP.SLEEP,STEP.PSYCHOSIS,STEP.FUNCTIONAL];
 
 export default function App(){
   const [step,setStep]=useState(STEP.WELCOME);
@@ -1740,16 +2190,35 @@ export default function App(){
               <div style={{fontFamily:FD,color:C.peach,fontWeight:700,fontSize:18}}>🌸 ManaScreen</div>
               <div style={{display:"flex",gap:10,alignItems:"center"}}>
                 {SAVEABLE_STEPS.includes(step)&&<span style={{color:C.sage,fontSize:10,fontWeight:700,display:"flex",alignItems:"center",gap:3}}>💾 Saved</span>}
-                {[STEP.RESULT,STEP.EXERCISES,STEP.FAQ,STEP.LEARN,STEP.PDF].includes(step)&&<button onClick={reset} style={{background:"none",border:"none",color:C.textSoft,cursor:"pointer",fontSize:12,fontFamily:FB}}>Start over</button>}
+                {[STEP.RESULT,STEP.EXERCISES,STEP.FAQ,STEP.LEARN,STEP.PDF,STEP.QUICK_RESULT].includes(step)&&<button onClick={reset} style={{background:"none",border:"none",color:C.textSoft,cursor:"pointer",fontSize:12,fontFamily:FB}}>Start over</button>}
               </div>
             </div>
           )}
 
-          {step===STEP.WELCOME && <WelcomeScreen onNext={()=>setStep(STEP.WHO)} onPrivacy={()=>setStep(STEP.PRIVACY)} onRefs={()=>setStep(STEP.REFS)}/>}
+          {step===STEP.WELCOME && <WelcomeScreen
+            onQuick={()=>setStep(STEP.QUICK)}
+            onFull={()=>setStep(STEP.WHO)}
+            onPrivacy={()=>setStep(STEP.PRIVACY)}
+            onRefs={()=>setStep(STEP.REFS)}/>}
+
+          {step===STEP.QUICK && <QuickCheckScreen
+            onBack={()=>setStep(STEP.WELCOME)}
+            onGoFull={()=>setStep(STEP.WHO)}
+            onComplete={(r)=>{
+              setData(d=>({...d,...r}));
+              setStep(STEP.QUICK_RESULT);
+            }}/>}
+          {step===STEP.QUICK_RESULT && <QuickCheckResult
+            phq2={data.phq2||0} gad2={data.gad2||0}
+            onGoFull={()=>setStep(STEP.WHO)}
+            onDone={()=>{setHelpOpen(false);setStep(STEP.WELCOME);setData({});}}
+            onHelp={()=>setHelpOpen(true)}/>}
+
           {step===STEP.WHO && <WhoScreen onSelect={v=>{setWho(v);update("who",v);setStep(STEP.PROFILE);}} onBack={()=>setStep(STEP.WELCOME)}/>}
           {step===STEP.PROFILE && <ProfileScreen initial={data.profile} onComplete={p=>{update("profile",p);setStep(STEP.MEDICAL);}} onBack={()=>setStep(STEP.WHO)}/>}
-          {step===STEP.MEDICAL && <MedicalHistoryScreen initial={data.medical} onComplete={m=>{update("medical",m);setStep(STEP.DURATION);}} onBack={()=>setStep(STEP.PROFILE)}/>}
-          {step===STEP.DURATION && <DurationScreen initial={data.duration} onComplete={d=>{update("duration",d);setStep(STEP.PHQ9);}} onBack={()=>setStep(STEP.MEDICAL)}/>}
+          {step===STEP.MEDICAL && <MedicalHistoryScreen initial={data.medical} onComplete={m=>{update("medical",m);setStep(m.meds==="Yes"?STEP.MEDS:STEP.DURATION);}} onBack={()=>setStep(STEP.PROFILE)}/>}
+          {step===STEP.MEDS && <MedicationsScreen initial={data.meds} onComplete={m=>{update("meds",m);setStep(STEP.DURATION);}} onBack={()=>setStep(STEP.MEDICAL)}/>}
+          {step===STEP.DURATION && <DurationScreen initial={data.duration} onComplete={d=>{update("duration",d);setStep(STEP.PHQ9);}} onBack={()=>setStep(data.medical?.meds==="Yes"?STEP.MEDS:STEP.MEDICAL)}/>}
 
           {step===STEP.PHQ9 && <LikertScreen questions={PHQ9} code="PHQ-9" color={C.sky} bgColor={C.skyLight} sectionTitle="Depression" options={FREQ4} onComplete={afterPHQ9} onBack={()=>setStep(STEP.DURATION)} answeredSoFar={data.phq9answers||[]}/>}
           {step===STEP.BRIDGE && <SectionBridge title="Halfway there 🌿" message={`You've completed the depression screen. You're doing wonderfully.\n\nNext: 7 questions about anxiety. Take a breath when you're ready.`} emoji="🌿" color={C.sage} buttonLabel="Continue →" onNext={()=>setStep(STEP.GAD7)}/>}
