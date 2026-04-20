@@ -357,19 +357,28 @@ function LikertScreen({questions,code,color,bgColor,sectionTitle,options,onCompl
       setShowEncourage(false);setVisible(false);
       setTimeout(()=>{
         const na=[...answers,val];
-        if(current+1<questions.length){setAnswers(na);setCurrent(c=>c+1);setSelected(null);setVisible(true);}
-        else onComplete(na.reduce((a,b)=>a+(b==="skip"?0:b),0),na);
-      },300);
-    },900);
+        if(current+1<questions.length){
+          setAnswers(na);setCurrent(c=>c+1);setSelected(null);setVisible(true);
+        } else {
+          // Reset state so component is clean if re-used
+          setAnswers(na);setSelected(null);setVisible(true);
+          onComplete(na.reduce((a,b)=>a+(b==="skip"?0:b),0),na);
+        }
+      },180);
+    },420);
   };
   const handleSkip=()=>{
     setShowSkip(false);
     const na=[...answers,"skip"];
     setVisible(false);
     setTimeout(()=>{
-      if(current+1<questions.length){setAnswers(na);setCurrent(c=>c+1);setSelected(null);setVisible(true);}
-      else onComplete(na.reduce((a,b)=>a+(b==="skip"?0:b),0),na);
-    },250);
+      if(current+1<questions.length){
+        setAnswers(na);setCurrent(c=>c+1);setSelected(null);setVisible(true);
+      } else {
+        setAnswers(na);setSelected(null);setVisible(true);
+        onComplete(na.reduce((a,b)=>a+(b==="skip"?0:b),0),na);
+      }
+    },180);
   };
   const handleBackInside=()=>{
     if(current>0){
@@ -452,33 +461,51 @@ function TriggerWarning({title,message,color,emoji,onContinue,onSkipSection}){
 }
 
 /* ─── Wind-down breathing ────────────────────────────────────────── */
+const WINDDOWN_STEPS=[
+  {phase:"in",  label:"Breathe In",  duration:4, scale:1.4},
+  {phase:"hold",label:"Hold",        duration:4, scale:0.95},
+  {phase:"out", label:"Breathe Out", duration:6, scale:0.85},
+];
 function WindDown({onContinue}){
-  const [phase,setPhase]=useState("in");
-  const [count,setCount]=useState(4);
+  const [stepIdx,setStepIdx]=useState(0);
+  const [count,setCount]=useState(WINDDOWN_STEPS[0].duration);
   const [round,setRound]=useState(1);
+  const [done,setDone]=useState(false);
   const totalRounds=3;
-  const [scale,setScale]=useState(1);
 
   useEffect(()=>{
+    if(done) return;
     const timer=setInterval(()=>{
       setCount(c=>{
-        if(c>1)return c-1;
-        setPhase(p=>{
-          const next=p==="in"?"hold":p==="hold"?"out":"in";
-          if(next==="in")setRound(r=>r+1);
-          setCount(next==="in"?4:next==="hold"?4:6);
-          setScale(next==="in"?1.4:next==="out"?0.85:0.95);
+        if(c>1) return c-1;
+        // phase complete — advance
+        setStepIdx(s=>{
+          const next=(s+1)%WINDDOWN_STEPS.length;
+          if(next===0){
+            // completed a full round
+            setRound(r=>{
+              if(r>=totalRounds){
+                setDone(true);
+                return r;
+              }
+              return r+1;
+            });
+          }
           return next;
         });
-        return phase==="in"?4:phase==="hold"?4:6;
+        return null; // will be reset in the next effect below
       });
     },1000);
     return()=>clearInterval(timer);
-  },[phase]);
+  },[done]);
 
-  useEffect(()=>{setScale(phase==="in"?1.4:phase==="out"?0.85:0.95);},[phase]);
+  // Reset count when step changes
+  useEffect(()=>{
+    if(!done) setCount(WINDDOWN_STEPS[stepIdx].duration);
+  },[stepIdx,done]);
 
-  const label=phase==="in"?"Breathe In":phase==="hold"?"Hold":"Breathe Out";
+  const cur=WINDDOWN_STEPS[stepIdx];
+  const displayCount=count==null?cur.duration:count;
 
   return(
     <div style={{textAlign:"center",paddingTop:30}}>
@@ -487,15 +514,19 @@ function WindDown({onContinue}){
         <h2 style={{fontFamily:FD,fontSize:24,color:C.text,margin:"14px 0 8px"}}>You've just answered some hard questions</h2>
         <p style={{color:C.textMid,fontSize:15,lineHeight:1.75,marginBottom:28}}>Before we look at your results, take a breath with us. You've done something brave today.</p>
         <div style={{position:"relative",width:180,height:180,margin:"0 auto 24px",display:"flex",alignItems:"center",justifyContent:"center"}}>
-          <div style={{position:"absolute",inset:0,borderRadius:"50%",background:C.sage+"18",transform:`scale(${scale})`,transition:"transform 3.6s ease"}}/>
-          <div style={{position:"absolute",inset:14,borderRadius:"50%",background:C.sage+"28",transform:`scale(${scale*0.9})`,transition:"transform 3.6s ease"}}/>
+          <div style={{position:"absolute",inset:0,borderRadius:"50%",background:C.sage+"18",transform:`scale(${cur.scale})`,transition:`transform ${cur.duration*0.9}s ease`}}/>
+          <div style={{position:"absolute",inset:14,borderRadius:"50%",background:C.sage+"28",transform:`scale(${cur.scale*0.9})`,transition:`transform ${cur.duration*0.9}s ease`}}/>
           <div style={{position:"relative",zIndex:1}}>
-            <div style={{color:C.sage,fontWeight:800,fontSize:32}}>{count}</div>
-            <div style={{color:C.sage,fontWeight:700,fontSize:13,marginTop:2}}>{label}</div>
+            <div style={{color:C.sage,fontWeight:800,fontSize:32}}>{done?"✓":displayCount}</div>
+            <div style={{color:C.sage,fontWeight:700,fontSize:13,marginTop:2}}>{done?"Complete":cur.label}</div>
           </div>
         </div>
-        <p style={{fontFamily:FD,color:C.textSoft,fontSize:14,fontStyle:"italic",marginBottom:24}}>Round {Math.min(round,totalRounds)} of {totalRounds}</p>
-        <WarmButton onClick={onContinue} variant="sage">I'm ready to see my results →</WarmButton>
+        <p style={{fontFamily:FD,color:C.textSoft,fontSize:14,fontStyle:"italic",marginBottom:24}}>
+          {done?"You did it. Take one more moment here if you'd like.":`Round ${Math.min(round,totalRounds)} of ${totalRounds}`}
+        </p>
+        <WarmButton onClick={onContinue} variant="sage">
+          {done?"See my results →":"Skip breathing and see results →"}
+        </WarmButton>
       </Fade>
     </div>
   );
@@ -1124,28 +1155,46 @@ function BreathingExercise({exercise,onDone}){
   const [round,setRound]=useState(1);
   const [running,setRunning]=useState(false);
   const [done,setDone]=useState(false);
-  const [scale,setScale]=useState(1);
-  const intervalRef=useRef(null);
   const steps=exercise.steps;
   const totalRounds=exercise.rounds||4;
-  const tick=useCallback(()=>{
-    setCount(c=>{
-      if(c>1)return c-1;
-      setPhase(p=>{
-        const next=(p+1)%steps.length;
-        if(next===0)setRound(r=>{if(r>=totalRounds){setRunning(false);setDone(true);return r;}return r+1;});
-        setCount(steps[next].duration);
-        setScale(steps[next].label==="Breathe In"?1.4:steps[next].label==="Breathe Out"?0.85:0.95);
-        return next;
+
+  useEffect(()=>{
+    if(!running||done) return;
+    const timer=setInterval(()=>{
+      setCount(c=>{
+        if(c>1) return c-1;
+        // phase ends — advance
+        setPhase(p=>{
+          const next=(p+1)%steps.length;
+          if(next===0){
+            setRound(r=>{
+              if(r>=totalRounds){
+                setRunning(false);
+                setDone(true);
+                return r;
+              }
+              return r+1;
+            });
+          }
+          return next;
+        });
+        return null; // reset on next effect
       });
-      return steps[(phase+1)%steps.length].duration;
-    });
-  },[steps,phase,totalRounds]);
-  useEffect(()=>{if(running){intervalRef.current=setInterval(tick,1000);}else clearInterval(intervalRef.current);return()=>clearInterval(intervalRef.current);},[running,tick]);
-  useEffect(()=>{setScale(steps[phase].label==="Breathe In"?1.4:steps[phase].label==="Breathe Out"?0.85:0.95);},[phase]);
+    },1000);
+    return()=>clearInterval(timer);
+  },[running,done,steps,totalRounds]);
+
+  // Reset count when phase changes
+  useEffect(()=>{
+    if(!done) setCount(steps[phase].duration);
+  },[phase,done,steps]);
+
   const cur=steps[phase];
+  const scale=cur.label==="Breathe In"?1.4:cur.label==="Breathe Out"?0.85:0.95;
+  const displayCount=count==null?cur.duration:count;
+
   if(done)return(<div style={{textAlign:"center",padding:"32px 0"}}><div style={{fontSize:64,marginBottom:16}}>✨</div><h3 style={{fontFamily:FD,fontSize:22,color:C.text,marginBottom:10}}>Beautifully done</h3><p style={{color:C.textMid,fontSize:15,lineHeight:1.75,marginBottom:28}}>Notice how you feel right now.</p><WarmButton onClick={onDone}>← Back</WarmButton></div>);
-  return(<div style={{textAlign:"center"}}><div style={{color:C.textSoft,fontSize:13,marginBottom:8}}>Round {round} of {totalRounds}</div><div style={{position:"relative",width:200,height:200,margin:"0 auto 28px",display:"flex",alignItems:"center",justifyContent:"center"}}><div style={{position:"absolute",inset:0,borderRadius:"50%",background:cur.color+"18",transform:`scale(${scale})`,transition:`transform ${cur.duration*0.9}s ease`}}/><div style={{position:"absolute",inset:16,borderRadius:"50%",background:cur.color+"28",transform:`scale(${scale*0.9})`,transition:`transform ${cur.duration*0.9}s ease`}}/><div style={{position:"relative",zIndex:1}}><div style={{color:cur.color,fontWeight:800,fontSize:36}}>{count}</div><div style={{color:cur.color,fontWeight:700,fontSize:14,marginTop:4}}>{cur.label}</div></div></div><p style={{fontFamily:FD,color:C.textMid,fontSize:16,lineHeight:1.7,marginBottom:24,fontStyle:"italic"}}>"{cur.instruction}"</p>{!running?<WarmButton onClick={()=>setRunning(true)} style={{background:cur.color,borderColor:cur.color}}>Begin</WarmButton>:<button onClick={()=>setRunning(false)} style={{background:"none",border:`2px solid ${C.border}`,borderRadius:18,padding:"14px",color:C.textSoft,fontSize:15,cursor:"pointer",fontFamily:FB,fontWeight:700,width:"100%"}}>Pause</button>}</div>);
+  return(<div style={{textAlign:"center"}}><div style={{color:C.textSoft,fontSize:13,marginBottom:8}}>Round {round} of {totalRounds}</div><div style={{position:"relative",width:200,height:200,margin:"0 auto 28px",display:"flex",alignItems:"center",justifyContent:"center"}}><div style={{position:"absolute",inset:0,borderRadius:"50%",background:cur.color+"18",transform:`scale(${scale})`,transition:`transform ${cur.duration*0.9}s ease`}}/><div style={{position:"absolute",inset:16,borderRadius:"50%",background:cur.color+"28",transform:`scale(${scale*0.9})`,transition:`transform ${cur.duration*0.9}s ease`}}/><div style={{position:"relative",zIndex:1}}><div style={{color:cur.color,fontWeight:800,fontSize:36}}>{displayCount}</div><div style={{color:cur.color,fontWeight:700,fontSize:14,marginTop:4}}>{cur.label}</div></div></div><p style={{fontFamily:FD,color:C.textMid,fontSize:16,lineHeight:1.7,marginBottom:24,fontStyle:"italic"}}>"{cur.instruction}"</p>{!running?<WarmButton onClick={()=>setRunning(true)} style={{background:cur.color,borderColor:cur.color}}>Begin</WarmButton>:<button onClick={()=>setRunning(false)} style={{background:"none",border:`2px solid ${C.border}`,borderRadius:18,padding:"14px",color:C.textSoft,fontSize:15,cursor:"pointer",fontFamily:FB,fontWeight:700,width:"100%"}}>Pause</button>}</div>);
 }
 function SimpleExercise({exercise,onDone}){
   const [step,setStep]=useState(0);
@@ -1798,13 +1847,13 @@ function QuickCheckScreen({onComplete,onBack,onGoFull}){
   );
 
   if(phase==="phq2")return(
-    <LikertScreen questions={PHQ2} code="PHQ-2" color={C.sky} bgColor={C.skyLight} sectionTitle="Mood (brief)" options={FREQ4}
+    <LikertScreen key="quick-phq2" questions={PHQ2} code="PHQ-2" color={C.sky} bgColor={C.skyLight} sectionTitle="Mood (brief)" options={FREQ4}
       onBack={()=>setPhase("intro")} allowSkip={false}
       onComplete={(score,answers)=>{setPhq2Answers(answers);setPhase("gad2");}}/>
   );
 
   if(phase==="gad2")return(
-    <LikertScreen questions={GAD2} code="GAD-2" color={C.sage} bgColor={C.sageLight} sectionTitle="Worry (brief)" options={FREQ4}
+    <LikertScreen key="quick-gad2" questions={GAD2} code="GAD-2" color={C.sage} bgColor={C.sageLight} sectionTitle="Worry (brief)" options={FREQ4}
       onBack={()=>setPhase("phq2")} allowSkip={false}
       onComplete={(score,answers)=>{
         setGad2Answers(answers);
@@ -2131,25 +2180,33 @@ export default function App(){
     setStep(STEP.WELCOME);setData({});
   };
 
-  // Flow control
-  const afterPHQ9=(score,answers)=>{update("phq9",score);update("phq9answers",answers);setStep(STEP.BRIDGE);};
+  // Flow control — scores are passed through the chain to avoid React stale-state issues
+  const afterPHQ9=(score,answers)=>{
+    update("phq9",score);update("phq9answers",answers);
+    setStep(STEP.BRIDGE);
+  };
   const afterGAD7=(score,answers)=>{
     update("gad7",score);update("gad7answers",answers);
     const phq9ans=data.phq9answers||[];
-    const suicidalityEndorsed=phq9ans[8]!=="skip"&&phq9ans[8]>0;
+    const suicidalityEndorsed=phq9ans[8]!==undefined&&phq9ans[8]!=="skip"&&phq9ans[8]>0;
+    const phq9=data.phq9||0;
+    const gad7=score; // use fresh score, not data.gad7 which is stale
     if(suicidalityEndorsed) setStep(STEP.CSSRS);
-    else afterSafety({level:0,safe:true});
+    else afterSafety({level:0,safe:true},phq9,gad7);
   };
-  const afterSafety=(s)=>{
+  const afterSafety=(s,phq9Fresh,gad7Fresh)=>{
     update("safety",s);
-    const phq9=data.phq9||0, gad7=data.gad7||0;
+    const phq9=phq9Fresh!==undefined?phq9Fresh:(data.phq9||0);
+    const gad7=gad7Fresh!==undefined?gad7Fresh:(data.gad7||0);
     if(phq9>=5||gad7>=5) setStep(STEP.TW_PHQ15);
     else setStep(STEP.FUNCTIONAL);
   };
   const afterPHQ15=(score)=>{
     update("phq15",score);
-    if((data.phq9||0)>=5) setStep(STEP.TW_MDQ);
-    else if((data.gad7||0)>=5) setStep(STEP.TW_TRAUMA);
+    const phq9=data.phq9||0;
+    const gad7=data.gad7||0;
+    if(phq9>=5) setStep(STEP.TW_MDQ);
+    else if(gad7>=5) setStep(STEP.TW_TRAUMA);
     else setStep(STEP.SLEEP);
   };
   const afterMDQ=(m)=>{update("mdq",m);setStep(STEP.TW_TRAUMA);};
@@ -2163,8 +2220,8 @@ export default function App(){
   const afterPsychosis=(p)=>{update("psychosis",p);setStep(STEP.FUNCTIONAL);};
   const afterFunctional=(f)=>{
     update("functional",f);
-    // Go to wind-down for anyone who had sensitive questions
-    const hadHeavy=((data.phq9||0)>=10)||((data.gad7||0)>=10)||data.safety?.level>0||data.trauma?.positive;
+    const phq9=data.phq9||0, gad7=data.gad7||0;
+    const hadHeavy=phq9>=10||gad7>=10||data.safety?.level>0||data.trauma?.positive;
     if(hadHeavy) setStep(STEP.WINDDOWN);
     else setStep(STEP.RESULT);
   };
@@ -2220,13 +2277,13 @@ export default function App(){
           {step===STEP.MEDS && <MedicationsScreen initial={data.meds} onComplete={m=>{update("meds",m);setStep(STEP.DURATION);}} onBack={()=>setStep(STEP.MEDICAL)}/>}
           {step===STEP.DURATION && <DurationScreen initial={data.duration} onComplete={d=>{update("duration",d);setStep(STEP.PHQ9);}} onBack={()=>setStep(data.medical?.meds==="Yes"?STEP.MEDS:STEP.MEDICAL)}/>}
 
-          {step===STEP.PHQ9 && <LikertScreen questions={PHQ9} code="PHQ-9" color={C.sky} bgColor={C.skyLight} sectionTitle="Depression" options={FREQ4} onComplete={afterPHQ9} onBack={()=>setStep(STEP.DURATION)} answeredSoFar={data.phq9answers||[]}/>}
+          {step===STEP.PHQ9 && <LikertScreen key="phq9" questions={PHQ9} code="PHQ-9" color={C.sky} bgColor={C.skyLight} sectionTitle="Depression" options={FREQ4} onComplete={afterPHQ9} onBack={()=>setStep(STEP.DURATION)} answeredSoFar={data.phq9answers||[]}/>}
           {step===STEP.BRIDGE && <SectionBridge title="Halfway there 🌿" message={`You've completed the depression screen. You're doing wonderfully.\n\nNext: 7 questions about anxiety. Take a breath when you're ready.`} emoji="🌿" color={C.sage} buttonLabel="Continue →" onNext={()=>setStep(STEP.GAD7)}/>}
-          {step===STEP.GAD7 && <LikertScreen questions={GAD7} code="GAD-7" color={C.sage} bgColor={C.sageLight} sectionTitle="Anxiety" options={FREQ4} onComplete={afterGAD7} onBack={()=>setStep(STEP.BRIDGE)} answeredSoFar={data.gad7answers||[]}/>}
-          {step===STEP.CSSRS && <SafetyScreen onComplete={s=>{update("safety",s);afterSafety(s);}}/>}
+          {step===STEP.GAD7 && <LikertScreen key="gad7" questions={GAD7} code="GAD-7" color={C.sage} bgColor={C.sageLight} sectionTitle="Anxiety" options={FREQ4} onComplete={afterGAD7} onBack={()=>setStep(STEP.BRIDGE)} answeredSoFar={data.gad7answers||[]}/>}
+          {step===STEP.CSSRS && <SafetyScreen onComplete={s=>{update("safety",s);afterSafety(s,data.phq9||0,data.gad7||0);}}/>}
 
           {step===STEP.TW_PHQ15 && <TriggerWarning title="Next: physical symptoms" message="These next questions are about any physical symptoms you may be having. Many of these are very common in Indian presentations of depression and anxiety. This takes about 3 minutes." emoji="🫄" color={C.amber} onContinue={()=>setStep(STEP.PHQ15)} onSkipSection={()=>{update("phq15",0);setStep(STEP.SLEEP);}}/>}
-          {step===STEP.PHQ15 && <LikertScreen questions={PHQ15} code="PHQ-15" color={C.amber} bgColor={C.amberLight} sectionTitle="Physical Symptoms" options={FREQ3} onComplete={afterPHQ15} onBack={()=>setStep(STEP.TW_PHQ15)}/>}
+          {step===STEP.PHQ15 && <LikertScreen key="phq15" questions={PHQ15} code="PHQ-15" color={C.amber} bgColor={C.amberLight} sectionTitle="Physical Symptoms" options={FREQ3} onComplete={afterPHQ15} onBack={()=>setStep(STEP.TW_PHQ15)}/>}
 
           {step===STEP.TW_MDQ && <TriggerWarning title="Next: mood episodes" message="These questions explore whether you've ever experienced periods of unusually high or irritable mood. Even if you're not sure, it's worth answering — this can significantly affect what kind of help is most useful." emoji="🌓" color={C.lavender} onContinue={()=>setStep(STEP.MDQ)} onSkipSection={()=>{update("mdq",{positive:false,skipped:true});setStep(STEP.TW_TRAUMA);}}/>}
           {step===STEP.MDQ && <MDQScreen onComplete={afterMDQ} onBack={()=>setStep(STEP.TW_MDQ)}/>}
