@@ -19,7 +19,67 @@ const FB = "'Nunito', 'Segoe UI', sans-serif";
 
 const SAVE_KEY      = "manascreen_progress_v2";
 const HISTORY_KEY   = "manascreen_history_v1";
+const MOODLOG_KEY   = "manascreen_moodlog_v1";
+const PREFS_KEY     = "manascreen_prefs_v1";
 const SAVE_EXPIRY_H = 24;
+
+/* ─── Mood log definitions (Stage 1 / Feature 2) ────────────────── */
+const MOODS = [
+  {value:5,emoji:"😊",label:"Great",color:"#6b9e82"},
+  {value:4,emoji:"🙂",label:"Okay",color:"#5b8fc9"},
+  {value:3,emoji:"😐",label:"Meh",color:"#a08a7e"},
+  {value:2,emoji:"😔",label:"Low",color:"#d4972a"},
+  {value:1,emoji:"😢",label:"Heavy",color:"#c9606a"},
+];
+
+/* ─── Small storage helpers ─────────────────────────────────────── */
+const storage = {
+  get(key,fallback=null){
+    try{
+      const raw=window.localStorage?.getItem(key);
+      return raw?JSON.parse(raw):fallback;
+    }catch(e){return fallback;}
+  },
+  set(key,value){
+    try{window.localStorage?.setItem(key,JSON.stringify(value));}catch(e){}
+  },
+  remove(key){
+    try{window.localStorage?.removeItem(key);}catch(e){}
+  },
+};
+
+/* ─── Haptics + sound hooks (Feature 5) ─────────────────────────── */
+function tapHaptic(strength="light"){
+  try{
+    const map={light:15,medium:25,strong:[15,30,15]};
+    if(navigator.vibrate) navigator.vibrate(map[strength]||15);
+  }catch(e){}
+}
+// Soft chime generated on-demand — no external audio files needed
+function playChime(type="soft"){
+  try{
+    const prefs=storage.get(PREFS_KEY,{sound:true});
+    if(!prefs.sound) return;
+    const AC=window.AudioContext||window.webkitAudioContext;
+    if(!AC) return;
+    const ctx=new AC();
+    const freqs=type==="soft"?[523.25,659.25]:type==="complete"?[523.25,659.25,783.99]:[440];
+    freqs.forEach((freq,i)=>{
+      const osc=ctx.createOscillator();
+      const gain=ctx.createGain();
+      osc.connect(gain);gain.connect(ctx.destination);
+      osc.frequency.value=freq;
+      osc.type="sine";
+      const start=ctx.currentTime+i*0.08;
+      gain.gain.setValueAtTime(0,start);
+      gain.gain.linearRampToValueAtTime(0.08,start+0.04);
+      gain.gain.exponentialRampToValueAtTime(0.001,start+0.6);
+      osc.start(start);
+      osc.stop(start+0.6);
+    });
+    setTimeout(()=>{try{ctx.close();}catch(e){}},1200);
+  }catch(e){}
+}
 
 /* ─── Encouragements ────────────────────────────────────────────── */
 const ENCOURAGEMENTS = [
@@ -350,6 +410,7 @@ function LikertScreen({questions,code,color,bgColor,sectionTitle,options,onCompl
 
   const handleChoice=(val)=>{
     if(selected!==null) return;
+    tapHaptic("light");
     setSelected(val);
     setEncourageMsg(ENCOURAGEMENTS[Math.floor(Math.random()*ENCOURAGEMENTS.length)]);
     setShowEncourage(true);
@@ -361,6 +422,8 @@ function LikertScreen({questions,code,color,bgColor,sectionTitle,options,onCompl
           setAnswers(na);setCurrent(c=>c+1);setSelected(null);setVisible(true);
         } else {
           // Reset state so component is clean if re-used
+          playChime("soft");
+          tapHaptic("medium");
           setAnswers(na);setSelected(null);setVisible(true);
           onComplete(na.reduce((a,b)=>a+(b==="skip"?0:b),0),na);
         }
@@ -1816,128 +1879,329 @@ function HelpNowButton({active,onToggle}){
   );
 }
 
-/* ─── Quick Check (PHQ-2 + GAD-2) ───────────────────────────────── */
+/* ─── Quick Check (PHQ-2 + GAD-2) — custom attractive flow ──────── */
 const PHQ2 = [PHQ9[0], PHQ9[1]]; // first 2 PHQ-9 items
 const GAD2 = [GAD7[0], GAD7[1]]; // first 2 GAD-7 items
+const QC_QUESTIONS = [
+  {...PHQ9[0], tint:C.sky,      tintLight:C.skyLight,      group:"mood"},
+  {...PHQ9[1], tint:C.lavender, tintLight:C.lavenderLight, group:"mood"},
+  {...GAD7[0], tint:C.sage,     tintLight:C.sageLight,     group:"worry"},
+  {...GAD7[1], tint:C.teal,     tintLight:C.tealLight,     group:"worry"},
+];
+const QC_AFFIRMATIONS = [
+  "Thank you for being honest 🌿",
+  "That took courage 💛",
+  "You're doing beautifully 🌸",
+  "One more — you're almost there ✨",
+];
 
 function QuickCheckScreen({onComplete,onBack,onGoFull}){
   const [phase,setPhase]=useState("intro");
-  const [phq2Answers,setPhq2Answers]=useState([]);
-  const [gad2Answers,setGad2Answers]=useState([]);
-  const [done,setDone]=useState(false);
+  const [current,setCurrent]=useState(0);
+  const [answers,setAnswers]=useState([]);
+  const [selected,setSelected]=useState(null);
+  const [showAffirm,setShowAffirm]=useState(false);
+  const [visible,setVisible]=useState(true);
 
-  if(phase==="intro")return(
-    <div>
-      <BackBar onBack={onBack}/>
-      <Fade>
-        <div style={{textAlign:"center",marginBottom:24}}>
-          <div style={{fontSize:52,marginBottom:10}}>⚡</div>
-          <Pill color={C.teal}>Quick Check</Pill>
-          <h2 style={{fontFamily:FD,fontSize:24,color:C.text,margin:"12px 0 8px"}}>Just 4 questions, 90 seconds</h2>
-          <p style={{color:C.textMid,fontSize:14,lineHeight:1.75}}>A brief check using PHQ-2 and GAD-2 — the ultra-short validated versions of the full screens.</p>
-        </div>
-        <Card style={{marginBottom:14,background:C.tealLight,border:`1.5px solid ${C.teal}44`}}>
-          <p style={{color:C.teal,fontSize:13,fontWeight:700,lineHeight:1.6,marginBottom:6}}>🌿 If anything stands out, you can go deeper</p>
-          <p style={{color:C.textMid,fontSize:13,lineHeight:1.65}}>If your quick check suggests something worth exploring, you'll have the option to do the full 15-minute assessment for a detailed picture.</p>
-        </Card>
-        <WarmButton onClick={()=>setPhase("phq2")} variant="teal">Start quick check →</WarmButton>
-        <button onClick={onGoFull} style={{display:"block",margin:"14px auto 0",background:"none",border:"none",color:C.textSoft,cursor:"pointer",fontSize:13,fontFamily:FB,textDecoration:"underline"}}>Or skip to the full 15-min assessment</button>
-      </Fade>
-    </div>
-  );
+  /* ── Intro ──────────────────────────────────────────────────── */
+  if(phase==="intro"){
+    return(
+      <div>
+        <BackBar onBack={onBack}/>
+        <Fade>
+          <div style={{textAlign:"center",marginBottom:26}}>
+            <div style={{position:"relative",width:120,height:120,margin:"10px auto 18px"}}>
+              {/* pulsing rings */}
+              <div style={{position:"absolute",inset:0,borderRadius:"50%",background:C.teal+"22",animation:"qcPulse 2.4s ease-in-out infinite"}}/>
+              <div style={{position:"absolute",inset:14,borderRadius:"50%",background:C.teal+"33",animation:"qcPulse 2.4s ease-in-out infinite 0.6s"}}/>
+              <div style={{position:"absolute",inset:28,borderRadius:"50%",background:C.teal,display:"flex",alignItems:"center",justifyContent:"center",fontSize:32,boxShadow:"0 6px 20px rgba(74,171,176,0.35)"}}>⚡</div>
+            </div>
+            <Pill color={C.teal}>90 seconds · 4 questions</Pill>
+            <h2 style={{fontFamily:FD,fontSize:26,color:C.text,margin:"14px 0 10px"}}>A gentle check-in</h2>
+            <p style={{color:C.textMid,fontSize:15,lineHeight:1.75,maxWidth:320,margin:"0 auto"}}>Four quick questions. No judgement. No right answers. Just a moment to see how you're really doing.</p>
+          </div>
+        </Fade>
+        <Fade delay={200}>
+          <Card style={{marginBottom:16,background:`linear-gradient(135deg,${C.tealLight} 0%,#f0fafa 100%)`,border:`1.5px solid ${C.teal}44`}}>
+            <div style={{display:"flex",gap:12,alignItems:"flex-start",marginBottom:10}}>
+              <span style={{fontSize:22}}>🌿</span>
+              <div>
+                <p style={{color:C.teal,fontWeight:800,fontSize:13,marginBottom:4}}>What happens next?</p>
+                <p style={{color:C.textMid,fontSize:13,lineHeight:1.7}}>You'll see one question at a time. Tap the answer that feels closest to you. At the end, you'll get gentle insight — and the option to go deeper if you'd like.</p>
+              </div>
+            </div>
+          </Card>
+        </Fade>
+        <Fade delay={350}>
+          <WarmButton onClick={()=>setPhase("questions")} variant="teal">Let's begin 🌱</WarmButton>
+          <button onClick={onGoFull} style={{display:"block",margin:"14px auto 0",background:"none",border:"none",color:C.textSoft,cursor:"pointer",fontSize:13,fontFamily:FB,textDecoration:"underline"}}>Or take the full 15-min assessment</button>
+        </Fade>
+        <style>{`
+          @keyframes qcPulse{0%,100%{transform:scale(1);opacity:.7}50%{transform:scale(1.08);opacity:1}}
+        `}</style>
+      </div>
+    );
+  }
 
-  if(phase==="phq2")return(
-    <LikertScreen key="quick-phq2" questions={PHQ2} code="PHQ-2" color={C.sky} bgColor={C.skyLight} sectionTitle="Mood (brief)" options={FREQ4}
-      onBack={()=>setPhase("intro")} allowSkip={false}
-      onComplete={(score,answers)=>{setPhq2Answers(answers);setPhase("gad2");}}/>
-  );
+  /* ── Questions ──────────────────────────────────────────────── */
+  const q=QC_QUESTIONS[current];
+  const progress=((current)/QC_QUESTIONS.length)*100;
+  const groupColor=q.tint;
+  const groupLabel=q.group==="mood"?"Mood":"Worry";
 
-  if(phase==="gad2")return(
-    <LikertScreen key="quick-gad2" questions={GAD2} code="GAD-2" color={C.sage} bgColor={C.sageLight} sectionTitle="Worry (brief)" options={FREQ4}
-      onBack={()=>setPhase("phq2")} allowSkip={false}
-      onComplete={(score,answers)=>{
-        setGad2Answers(answers);
-        const phq2=phq2Answers.reduce((a,b)=>a+(b==="skip"?0:b),0);
-        const gad2=score;
-        onComplete({phq2,gad2,phq2Answers,gad2Answers:answers});
-      }}/>
-  );
-  return null;
-}
+  const handleAnswer=(val)=>{
+    if(selected!==null) return;
+    tapHaptic("light");
+    setSelected(val);
+    setShowAffirm(true);
+    setTimeout(()=>{
+      setShowAffirm(false);
+      setVisible(false);
+      setTimeout(()=>{
+        const na=[...answers,val];
+        if(current+1<QC_QUESTIONS.length){
+          setAnswers(na);
+          setCurrent(c=>c+1);
+          setSelected(null);
+          setVisible(true);
+        } else {
+          // complete: compute phq2 and gad2
+          playChime("complete");
+          tapHaptic("medium");
+          const phq2=na[0]+na[1];
+          const gad2=na[2]+na[3];
+          onComplete({phq2,gad2,phq2Answers:[na[0],na[1]],gad2Answers:[na[2],na[3]]});
+        }
+      },200);
+    },550);
+  };
 
-function QuickCheckResult({phq2,gad2,onGoFull,onDone,onHelp}){
-  // PHQ-2 ≥3 = positive screen for depression
-  // GAD-2 ≥3 = positive screen for anxiety
-  const depPositive=phq2>=3;
-  const anxPositive=gad2>=3;
-  const anyPositive=depPositive||anxPositive;
+  const handleBackInside=()=>{
+    if(current>0){
+      setAnswers(answers.slice(0,-1));
+      setCurrent(c=>c-1);
+      setSelected(null);
+      setVisible(true);
+    } else {
+      setPhase("intro");
+    }
+  };
 
   return(
     <div>
-      <Fade>
-        <div style={{textAlign:"center",marginBottom:22}}>
-          <div style={{fontSize:48,marginBottom:10}}>{anyPositive?"🌿":"🌸"}</div>
-          <Pill color={C.teal}>Quick check complete</Pill>
-          <h2 style={{fontFamily:FD,fontSize:24,color:C.text,margin:"12px 0 8px"}}>
-            {anyPositive?"Worth looking deeper":"Good news"}
-          </h2>
-        </div>
-      </Fade>
+      <BackBar onBack={handleBackInside} label={current>0?"Previous question":"Back"}/>
 
-      <Fade delay={150}>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:16}}>
-          <Card style={{textAlign:"center",background:depPositive?C.amberLight:C.sageLight,border:`1.5px solid ${depPositive?C.amber:C.sage}44`,padding:"16px 12px"}}>
-            <div style={{color:C.textSoft,fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:1}}>PHQ-2 (Mood)</div>
-            <div style={{color:depPositive?C.amber:C.sage,fontWeight:800,fontSize:20,margin:"2px 0"}}>{phq2}<span style={{fontSize:11,color:C.textMuted}}>/6</span></div>
-            <div style={{fontSize:11,color:depPositive?C.amber:C.sage,fontWeight:700}}>{depPositive?"Positive":"Negative"}</div>
-          </Card>
-          <Card style={{textAlign:"center",background:anxPositive?C.amberLight:C.sageLight,border:`1.5px solid ${anxPositive?C.amber:C.sage}44`,padding:"16px 12px"}}>
-            <div style={{color:C.textSoft,fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:1}}>GAD-2 (Worry)</div>
-            <div style={{color:anxPositive?C.amber:C.sage,fontWeight:800,fontSize:20,margin:"2px 0"}}>{gad2}<span style={{fontSize:11,color:C.textMuted}}>/6</span></div>
-            <div style={{fontSize:11,color:anxPositive?C.amber:C.sage,fontWeight:700}}>{anxPositive?"Positive":"Negative"}</div>
-          </Card>
-        </div>
-      </Fade>
+      {/* Progress — 4 dots that fill up */}
+      <div style={{display:"flex",justifyContent:"center",gap:10,marginBottom:22}}>
+        {QC_QUESTIONS.map((qq,i)=>(
+          <div key={i} style={{
+            width:i===current?28:10,
+            height:10,
+            borderRadius:6,
+            background:i<current?qq.tint:i===current?qq.tint:C.border,
+            transition:"all 0.4s ease",
+            boxShadow:i===current?`0 0 0 4px ${qq.tint}22`:"none",
+          }}/>
+        ))}
+      </div>
 
-      <Fade delay={250}>
-        <Card style={{marginBottom:16,background:anyPositive?C.amberLight:C.sageLight,border:`1.5px solid ${anyPositive?C.amber:C.sage}44`}}>
-          {anyPositive?(
-            <>
-              <div style={{color:C.amber,fontWeight:800,fontSize:14,marginBottom:8}}>💛 Your brief screen is positive</div>
-              <p style={{color:C.textMid,fontSize:13,lineHeight:1.7,marginBottom:8}}>The PHQ-2 and GAD-2 are designed to be sensitive — they flag anything worth looking into. Your result suggests it's worth doing the full 15-minute assessment to get a complete picture.</p>
-              <p style={{color:C.textMid,fontSize:13,lineHeight:1.7}}>The full assessment will give you detailed scores, clinical flags, a treatment tier, and a shareable report for your doctor.</p>
-            </>
-          ):(
-            <>
-              <div style={{color:C.sage,fontWeight:800,fontSize:14,marginBottom:8}}>🌱 No significant flags on the brief screen</div>
-              <p style={{color:C.textMid,fontSize:13,lineHeight:1.7}}>You can still do the full assessment if you'd like a detailed picture, or just come back anytime you want to check in.</p>
-            </>
-          )}
+      <div style={{textAlign:"center",marginBottom:14}}>
+        <Pill color={groupColor}>{groupLabel} · Question {current+1} of {QC_QUESTIONS.length}</Pill>
+      </div>
+
+      {/* Question card with fade */}
+      <div style={{opacity:visible?1:0,transform:visible?"translateY(0) scale(1)":"translateY(-8px) scale(0.98)",transition:"opacity 0.4s ease,transform 0.4s ease"}}>
+        <Card style={{marginBottom:20,background:`linear-gradient(135deg,${q.tintLight} 0%,#ffffff 100%)`,border:`1.5px solid ${groupColor}33`,textAlign:"center",padding:"28px 22px"}}>
+          <div style={{fontSize:52,marginBottom:14,animation:"qcFloat 3s ease-in-out infinite"}}>{q.emoji}</div>
+          <p style={{color:C.textSoft,fontSize:12,marginBottom:10,letterSpacing:0.3}}>Over the last <strong>2 weeks</strong>, how often…</p>
+          <p style={{fontFamily:FD,color:C.text,fontSize:18,lineHeight:1.55,fontWeight:600}}>{q.q}</p>
         </Card>
-      </Fade>
+      </div>
 
-      <Fade delay={320}>
-        <div style={{display:"flex",flexDirection:"column",gap:10}}>
-          {anyPositive?(
-            <>
-              <WarmButton onClick={onGoFull} variant="primary">Do the full assessment →</WarmButton>
-              <WarmButton onClick={onDone} variant="secondary">Not today, just finish</WarmButton>
-            </>
-          ):(
-            <>
-              <WarmButton onClick={onGoFull} variant="secondary">Do the full assessment anyway</WarmButton>
-              <WarmButton onClick={onDone} variant="ghost">Finish here</WarmButton>
-            </>
-          )}
-          <button onClick={onHelp} style={{background:"none",border:"none",color:C.rose,cursor:"pointer",fontSize:13,fontFamily:FB,fontWeight:700,marginTop:6}}>💙 I want to talk to someone now</button>
-        </div>
-      </Fade>
+      {/* Affirmation */}
+      <div style={{textAlign:"center",height:26,marginBottom:10,opacity:showAffirm?1:0,transform:showAffirm?"translateY(0)":"translateY(-4px)",transition:"all 0.35s ease"}}>
+        <span style={{color:groupColor,fontWeight:800,fontSize:14}}>{QC_AFFIRMATIONS[current]}</span>
+      </div>
 
-      <Fade delay={400}>
-        <div style={{background:C.amberLight,border:`1px solid ${C.amber}33`,borderRadius:12,padding:"12px 14px",marginTop:16}}>
-          <p style={{color:C.textMid,fontSize:12,lineHeight:1.65}}>⚠️ The PHQ-2/GAD-2 are screening tools. A negative result doesn't mean you have no concerns — it just means the brief screen didn't flag anything. Trust how you feel.</p>
+      {/* Answer buttons */}
+      <div style={{display:"flex",flexDirection:"column",gap:10}}>
+        {FREQ4.map(ch=>{
+          const isSelected=selected===ch.value;
+          return(
+            <button key={ch.value} onClick={()=>handleAnswer(ch.value)}
+              style={{
+                display:"flex",alignItems:"center",gap:14,
+                padding:"15px 18px",borderRadius:16,
+                border:`2px solid ${isSelected?groupColor:C.border}`,
+                background:isSelected?groupColor+"15":C.card,
+                cursor:selected!==null?"default":"pointer",
+                textAlign:"left",width:"100%",fontFamily:FB,
+                transition:"all 0.2s ease",
+                opacity:selected!==null&&!isSelected?0.4:1,
+                transform:isSelected?"scale(1.02)":"scale(1)",
+                boxShadow:isSelected?`0 4px 16px ${groupColor}33`:"0 2px 8px rgba(0,0,0,0.03)",
+              }}>
+              <div style={{
+                width:36,height:36,borderRadius:11,
+                background:isSelected?groupColor:groupColor+"1a",
+                color:isSelected?C.white:groupColor,
+                display:"flex",alignItems:"center",justifyContent:"center",
+                fontWeight:800,fontSize:14,flexShrink:0,
+                transition:"all 0.2s ease",
+              }}>{isSelected?"✓":ch.value}</div>
+              <div style={{flex:1}}>
+                <div style={{color:C.text,fontWeight:700,fontSize:15}}>{ch.label}</div>
+                <div style={{color:C.textSoft,fontSize:12,marginTop:1}}>{ch.sub}</div>
+              </div>
+            </button>
+          );
+        })}
+      </div>
+
+      <style>{`
+        @keyframes qcFloat{0%,100%{transform:translateY(0)}50%{transform:translateY(-4px)}}
+      `}</style>
+    </div>
+  );
+}
+
+function QuickCheckResult({phq2,gad2,onGoFull,onDone,onHelp}){
+  const depPositive=phq2>=3;
+  const anxPositive=gad2>=3;
+  const anyPositive=depPositive||anxPositive;
+  const [revealPhase,setRevealPhase]=useState(0); // staged reveal
+
+  useEffect(()=>{
+    const t1=setTimeout(()=>setRevealPhase(1),400);
+    const t2=setTimeout(()=>setRevealPhase(2),1000);
+    const t3=setTimeout(()=>setRevealPhase(3),1600);
+    return()=>{clearTimeout(t1);clearTimeout(t2);clearTimeout(t3);};
+  },[]);
+
+  // Warm message
+  const warmTitle=anyPositive
+    ? (depPositive&&anxPositive?"We hear you":depPositive?"Your heart is carrying something":"Your mind has been busy")
+    : "You're doing okay";
+  const warmMessage=anyPositive
+    ? "Your answers suggest there's something worth exploring together. You've already done the hardest part — noticing."
+    : "Your brief check doesn't flag anything significant right now. But trust yourself — if something feels off, don't ignore it.";
+
+  const resultColor=anyPositive?C.peach:C.sage;
+
+  return(
+    <div>
+      {/* Hero reveal */}
+      <div style={{textAlign:"center",paddingTop:20,marginBottom:24}}>
+        <div style={{
+          fontSize:72,marginBottom:14,
+          opacity:revealPhase>=1?1:0,
+          transform:revealPhase>=1?"scale(1)":"scale(0.5)",
+          transition:"all 0.7s cubic-bezier(0.34,1.56,0.64,1)",
+        }}>{anyPositive?"🫂":"🌸"}</div>
+
+        <div style={{
+          opacity:revealPhase>=1?1:0,
+          transform:revealPhase>=1?"translateY(0)":"translateY(10px)",
+          transition:"all 0.5s ease 0.2s",
+        }}>
+          <Pill color={resultColor}>Your check-in</Pill>
+          <h2 style={{fontFamily:FD,fontSize:28,color:C.text,margin:"14px 0 10px",lineHeight:1.3}}>{warmTitle}</h2>
+          <p style={{color:C.textMid,fontSize:15,lineHeight:1.75,maxWidth:340,margin:"0 auto"}}>{warmMessage}</p>
         </div>
-      </Fade>
+      </div>
+
+      {/* Visual score cards with gentle reveal */}
+      <div style={{
+        display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:18,
+        opacity:revealPhase>=2?1:0,
+        transform:revealPhase>=2?"translateY(0)":"translateY(14px)",
+        transition:"all 0.6s ease",
+      }}>
+        {[
+          {label:"Mood",score:phq2,positive:depPositive,icon:"💭",color:depPositive?C.peach:C.sage},
+          {label:"Worry",score:gad2,positive:anxPositive,icon:"🌿",color:anxPositive?C.peach:C.sage},
+        ].map(s=>(
+          <div key={s.label} style={{
+            background:`linear-gradient(135deg,${s.color}12 0%,${s.color}05 100%)`,
+            border:`1.5px solid ${s.color}44`,
+            borderRadius:18,padding:"18px 14px",textAlign:"center",
+          }}>
+            <div style={{fontSize:30,marginBottom:4}}>{s.icon}</div>
+            <div style={{color:C.textSoft,fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:1.2,marginBottom:4}}>{s.label}</div>
+            <div style={{color:s.color,fontWeight:800,fontSize:22,fontFamily:FD}}>{s.score}<span style={{fontSize:12,color:C.textMuted,fontFamily:FB}}>/6</span></div>
+            <div style={{fontSize:11,color:s.color,fontWeight:700,marginTop:4}}>{s.positive?"Worth exploring":"Looking okay"}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Insight card */}
+      <div style={{
+        opacity:revealPhase>=3?1:0,
+        transform:revealPhase>=3?"translateY(0)":"translateY(14px)",
+        transition:"all 0.6s ease",
+      }}>
+        {anyPositive ? (
+          <>
+            <Card style={{marginBottom:14,background:`linear-gradient(135deg,${C.peachLight} 0%,#fff4ee 100%)`,border:`1.5px solid ${C.peach}44`}}>
+              <div style={{display:"flex",gap:10,alignItems:"flex-start"}}>
+                <span style={{fontSize:22,flexShrink:0}}>🌱</span>
+                <div>
+                  <p style={{color:C.peach,fontWeight:800,fontSize:14,marginBottom:8}}>Here's what we noticed</p>
+                  <p style={{color:C.textMid,fontSize:13,lineHeight:1.75,marginBottom:10}}>This brief check is designed to pick up on early signs. Your answers suggest it's worth taking a closer look — not because something is wrong, but because <strong>understanding helps</strong>.</p>
+                  <p style={{color:C.textMid,fontSize:13,lineHeight:1.75}}>The full 15-minute assessment gives you a clearer picture of what you're experiencing, possible reasons, and a shareable report for your doctor.</p>
+                </div>
+              </div>
+            </Card>
+
+            <button onClick={onGoFull} style={{
+              width:"100%",padding:"18px 20px",borderRadius:20,
+              border:`2px solid ${C.peach}`,
+              background:`linear-gradient(135deg,${C.peach} 0%,#d9704a 100%)`,
+              color:C.white,cursor:"pointer",textAlign:"left",fontFamily:FB,
+              display:"flex",alignItems:"center",gap:14,marginBottom:10,
+              boxShadow:`0 6px 20px ${C.peach}55`,
+            }}>
+              <div style={{width:48,height:48,borderRadius:14,background:"rgba(255,255,255,0.25)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:24,flexShrink:0}}>🌸</div>
+              <div style={{flex:1}}>
+                <div style={{fontWeight:800,fontSize:16,marginBottom:2}}>Take the full assessment</div>
+                <div style={{fontSize:12,opacity:0.9}}>10–15 minutes · clinical report included</div>
+              </div>
+              <span style={{fontSize:22}}>›</span>
+            </button>
+
+            <WarmButton onClick={onDone} variant="secondary">Not today — maybe later</WarmButton>
+          </>
+        ) : (
+          <>
+            <Card style={{marginBottom:14,background:`linear-gradient(135deg,${C.sageLight} 0%,#f0faf4 100%)`,border:`1.5px solid ${C.sage}44`}}>
+              <div style={{display:"flex",gap:10,alignItems:"flex-start"}}>
+                <span style={{fontSize:22,flexShrink:0}}>🌿</span>
+                <div>
+                  <p style={{color:C.sage,fontWeight:800,fontSize:14,marginBottom:8}}>A gentle reminder</p>
+                  <p style={{color:C.textMid,fontSize:13,lineHeight:1.75}}>A brief screen is never the full story. If things feel heavy even when scores look fine, <strong>trust yourself</strong>. The full assessment can give you a fuller picture anytime.</p>
+                </div>
+              </div>
+            </Card>
+            <WarmButton onClick={onGoFull} variant="secondary">Take the full assessment anyway</WarmButton>
+            <div style={{height:10}}/>
+            <WarmButton onClick={onDone} variant="ghost">Finish here</WarmButton>
+          </>
+        )}
+
+        <button onClick={onHelp} style={{
+          display:"flex",alignItems:"center",justifyContent:"center",gap:8,
+          width:"100%",padding:"12px",marginTop:14,
+          background:"none",border:"none",
+          color:C.rose,cursor:"pointer",fontSize:13,fontFamily:FB,fontWeight:700,
+        }}>💙 I want to talk to someone now</button>
+      </div>
+
+      <div style={{
+        background:C.amberLight,border:`1px solid ${C.amber}33`,borderRadius:12,padding:"10px 14px",marginTop:14,
+        opacity:revealPhase>=3?1:0,transition:"opacity 0.6s ease 0.4s",
+      }}>
+        <p style={{color:C.textMid,fontSize:11,lineHeight:1.6}}>The PHQ-2/GAD-2 are validated screening tools. A "looking okay" result means the brief screen didn't flag anything — not that concerns don't exist. Always trust how you feel.</p>
+      </div>
     </div>
   );
 }
@@ -1985,65 +2249,452 @@ function MedicationsScreen({onComplete,onBack,initial}){
   );
 }
 
-/* ─── Welcome ────────────────────────────────────────────────────── */
-/* ─── Welcome ────────────────────────────────────────────────────── */
-function WelcomeScreen({onQuick,onFull,onPrivacy,onRefs}){
-  return(
-    <div style={{textAlign:"center",paddingTop:20}}>
+/* ─── Mood check-in (Feature 2) ─────────────────────────────────── */
+function MoodCheckScreen({onDone,onBack}){
+  const [selected,setSelected]=useState(null);
+  const [note,setNote]=useState("");
+  const [phase,setPhase]=useState("mood"); // mood | note | done
+  const [saved,setSaved]=useState(false);
+
+  const handleMoodPick=(mood)=>{
+    tapHaptic("light");
+    setSelected(mood);
+    setTimeout(()=>setPhase("note"),420);
+  };
+
+  const saveMood=()=>{
+    const log=storage.get(MOODLOG_KEY,[]);
+    const entry={
+      when:Date.now(),
+      value:selected.value,
+      label:selected.label,
+      emoji:selected.emoji,
+      note:note.trim()||null,
+    };
+    // Replace if same day, else append
+    const today=new Date().toDateString();
+    const filtered=log.filter(e=>new Date(e.when).toDateString()!==today);
+    const updated=[...filtered,entry].slice(-60); // keep last 60 entries
+    storage.set(MOODLOG_KEY,updated);
+    playChime("soft");
+    tapHaptic("medium");
+    setSaved(true);
+    setPhase("done");
+  };
+
+  if(phase==="mood")return(
+    <div>
+      <BackBar onBack={onBack}/>
       <Fade>
-        <div style={{fontSize:64,marginBottom:10}}>🌸</div>
-        <h1 style={{fontFamily:FD,fontSize:34,fontWeight:700,color:C.text,marginBottom:4}}>ManaScreen</h1>
-        <p style={{color:C.textSoft,fontSize:12,letterSpacing:2,textTransform:"uppercase",fontWeight:700,marginBottom:6}}>Mental Wellness Assessment</p>
-        <p style={{color:C.textMuted,fontSize:11,marginBottom:22}}>DSM-5 & ICD-11 aligned · Private · Free</p>
-      </Fade>
-      <Fade delay={150}>
-        <Card style={{marginBottom:16,background:C.peachLight,border:`1.5px solid ${C.peach}33`}}>
-          <p style={{fontFamily:FD,color:C.textMid,fontSize:15,lineHeight:1.85,fontStyle:"italic"}}>"You've taken the first step just by being here. This is a safe, private space — just for you."</p>
-        </Card>
+        <div style={{textAlign:"center",marginTop:20,marginBottom:28}}>
+          <Pill color={C.peach}>10 seconds</Pill>
+          <h2 style={{fontFamily:FD,fontSize:28,color:C.text,margin:"14px 0 10px"}}>How are you feeling?</h2>
+          <p style={{color:C.textMid,fontSize:15,lineHeight:1.7}}>Right now, in this moment. No wrong answers.</p>
+        </div>
       </Fade>
 
-      <Fade delay={250}>
-        <div style={{textAlign:"left",color:C.textSoft,fontSize:12,fontWeight:800,textTransform:"uppercase",letterSpacing:1.2,marginBottom:10}}>How would you like to start?</div>
-        <button onClick={onQuick} style={{width:"100%",padding:"18px 20px",borderRadius:20,border:`2px solid ${C.teal}`,background:`linear-gradient(135deg,${C.tealLight} 0%,#f0fafa 100%)`,cursor:"pointer",textAlign:"left",fontFamily:FB,display:"flex",alignItems:"center",gap:14,marginBottom:10}}>
-          <div style={{width:50,height:50,borderRadius:15,background:C.teal,display:"flex",alignItems:"center",justifyContent:"center",fontSize:26,flexShrink:0}}>⚡</div>
-          <div style={{flex:1}}>
-            <div style={{color:C.teal,fontWeight:800,fontSize:15,marginBottom:2}}>Quick Check (90 seconds)</div>
-            <div style={{color:C.textMid,fontSize:12,lineHeight:1.45}}>4 questions · PHQ-2 + GAD-2 ultra-brief</div>
-          </div>
-          <span style={{color:C.teal,fontSize:22}}>›</span>
-        </button>
-        <button onClick={onFull} style={{width:"100%",padding:"18px 20px",borderRadius:20,border:`2px solid ${C.peach}`,background:`linear-gradient(135deg,${C.peachLight} 0%,#fff4ee 100%)`,cursor:"pointer",textAlign:"left",fontFamily:FB,display:"flex",alignItems:"center",gap:14,marginBottom:18}}>
-          <div style={{width:50,height:50,borderRadius:15,background:C.peach,display:"flex",alignItems:"center",justifyContent:"center",fontSize:26,flexShrink:0}}>📋</div>
-          <div style={{flex:1}}>
-            <div style={{color:C.peach,fontWeight:800,fontSize:15,marginBottom:2}}>Full Assessment (10–15 min)</div>
-            <div style={{color:C.textMid,fontSize:12,lineHeight:1.45}}>Comprehensive · clinical report for your doctor</div>
-          </div>
-          <span style={{color:C.peach,fontSize:22}}>›</span>
-        </button>
+      <div style={{display:"flex",flexDirection:"column",gap:10}}>
+        {MOODS.map((m,i)=>(
+          <Fade key={m.value} delay={i*70}>
+            <button onClick={()=>handleMoodPick(m)}
+              style={{
+                display:"flex",alignItems:"center",gap:16,
+                padding:"18px 20px",
+                borderRadius:20,
+                border:`2px solid ${selected?.value===m.value?m.color:C.border}`,
+                background:selected?.value===m.value?m.color+"18":C.card,
+                cursor:"pointer",textAlign:"left",width:"100%",fontFamily:FB,
+                transition:"all 0.25s ease",
+                transform:selected?.value===m.value?"scale(1.03)":"scale(1)",
+                boxShadow:selected?.value===m.value?`0 6px 18px ${m.color}33`:"0 2px 8px rgba(0,0,0,0.04)",
+              }}>
+              <div style={{fontSize:36,filter:selected?.value===m.value?"none":"grayscale(0%)"}}>{m.emoji}</div>
+              <div style={{flex:1}}>
+                <div style={{color:C.text,fontWeight:800,fontSize:16}}>{m.label}</div>
+              </div>
+              {selected?.value===m.value&&<span style={{color:m.color,fontSize:24}}>✓</span>}
+            </button>
+          </Fade>
+        ))}
+      </div>
+    </div>
+  );
+
+  if(phase==="note")return(
+    <div>
+      <BackBar onBack={()=>setPhase("mood")}/>
+      <Fade>
+        <div style={{textAlign:"center",marginBottom:18}}>
+          <div style={{fontSize:56,marginBottom:10}}>{selected.emoji}</div>
+          <Pill color={selected.color}>Feeling {selected.label.toLowerCase()}</Pill>
+          <h2 style={{fontFamily:FD,fontSize:22,color:C.text,margin:"14px 0 8px"}}>Want to say why? <span style={{color:C.textSoft,fontSize:14,fontWeight:400}}>(optional)</span></h2>
+          <p style={{color:C.textMid,fontSize:14}}>A word or two. Private to your device.</p>
+        </div>
+      </Fade>
+      <Fade delay={120}>
+        <textarea value={note} onChange={e=>setNote(e.target.value)}
+          placeholder="Work was stressful… / slept badly… / proud of myself…"
+          rows={3}
+          style={{
+            width:"100%",padding:"14px 16px",
+            borderRadius:16,
+            border:`1.5px solid ${C.border}`,
+            background:C.card,
+            color:C.text,fontSize:15,fontFamily:FB,
+            lineHeight:1.6,outline:"none",resize:"none",marginBottom:16,
+          }}
+          maxLength={160}/>
+        <div style={{color:C.textMuted,fontSize:11,textAlign:"right",marginTop:-12,marginBottom:18}}>{note.length}/160</div>
+      </Fade>
+      <Fade delay={220}>
+        <WarmButton onClick={saveMood} variant="sage">Save my check-in 🌿</WarmButton>
+        <button onClick={saveMood} style={{display:"block",margin:"12px auto 0",background:"none",border:"none",color:C.textSoft,cursor:"pointer",fontSize:13,fontFamily:FB,textDecoration:"underline"}}>Skip note</button>
+      </Fade>
+    </div>
+  );
+
+  // done
+  return(
+    <div style={{textAlign:"center",paddingTop:40}}>
+      <Fade>
+        <div style={{fontSize:70,marginBottom:14,animation:"checkBloom 0.7s cubic-bezier(0.34,1.56,0.64,1)"}}>✨</div>
+        <h2 style={{fontFamily:FD,fontSize:26,color:C.text,marginBottom:10}}>Logged</h2>
+        <p style={{color:C.textMid,fontSize:15,lineHeight:1.75,marginBottom:28,maxWidth:300,margin:"0 auto 28px"}}>Noticing how you feel — even briefly — is itself an act of care.</p>
+        <WarmButton onClick={onDone} variant="sage">Back home →</WarmButton>
+        <style>{`@keyframes checkBloom{0%{transform:scale(0.3);opacity:0}60%{transform:scale(1.15)}100%{transform:scale(1);opacity:1}}`}</style>
+      </Fade>
+    </div>
+  );
+}
+
+/* ─── Mood mini-calendar (for dashboard) ─────────────────────────── */
+function MoodCalendar({log,days=14}){
+  // Build array of last N days
+  const today=new Date();today.setHours(0,0,0,0);
+  const cells=[];
+  for(let i=days-1;i>=0;i--){
+    const d=new Date(today);d.setDate(d.getDate()-i);
+    const entry=log.find(e=>new Date(e.when).toDateString()===d.toDateString());
+    cells.push({date:d,entry});
+  }
+  if(!log.length)return(
+    <div style={{padding:"16px",background:C.card,border:`1.5px dashed ${C.border}`,borderRadius:16,textAlign:"center"}}>
+      <p style={{color:C.textSoft,fontSize:13,lineHeight:1.6}}>Your mood calendar will appear here once you start checking in.</p>
+    </div>
+  );
+
+  return(
+    <div>
+      <div style={{display:"grid",gridTemplateColumns:`repeat(${days},1fr)`,gap:3,marginBottom:10}}>
+        {cells.map((c,i)=>{
+          const mood=c.entry?MOODS.find(m=>m.value===c.entry.value):null;
+          const today=i===days-1;
+          return(
+            <div key={i} style={{
+              aspectRatio:"1",
+              borderRadius:6,
+              background:mood?mood.color+"40":C.border+"55",
+              border:today?`2px solid ${C.peach}`:"none",
+              display:"flex",alignItems:"center",justifyContent:"center",
+              fontSize:10,
+              color:mood?mood.color:C.textMuted,
+              fontWeight:800,
+            }} title={mood?`${c.date.toLocaleDateString()}: ${mood.label}`:c.date.toLocaleDateString()}>
+              {mood?mood.emoji:""}
+            </div>
+          );
+        })}
+      </div>
+      <div style={{display:"flex",justifyContent:"space-between",fontSize:10,color:C.textMuted,fontWeight:700}}>
+        <span>{days} days ago</span><span>Today</span>
+      </div>
+    </div>
+  );
+}
+
+/* ─── Returning-user dashboard (Feature 1) ──────────────────────── */
+function ReturningDashboard({history,moodLog,onMoodCheck,onQuick,onFull,onExercises,onPrivacy,onRefs,onResultsView}){
+  const hour=new Date().getHours();
+  const greeting=hour<5?"Hello, night owl":hour<12?"Good morning":hour<17?"Good afternoon":hour<21?"Good evening":"Hello, night owl";
+  const lastAssessment=history?.[history.length-1];
+  const lastMood=moodLog?.[moodLog.length-1];
+  const daysSinceLastAssessment=lastAssessment?Math.floor((Date.now()-lastAssessment.when)/(1000*60*60*24)):null;
+  const moodToday=moodLog?.find(e=>new Date(e.when).toDateString()===new Date().toDateString());
+
+  return(
+    <div style={{paddingTop:12}}>
+      <Fade>
+        <div style={{textAlign:"center",marginBottom:18}}>
+          <p style={{color:C.textSoft,fontSize:13,fontWeight:700,marginBottom:4}}>{greeting} 🌿</p>
+          <h1 style={{fontFamily:FD,fontSize:30,fontWeight:700,color:C.text,marginBottom:6,letterSpacing:-0.3}}>Welcome back</h1>
+          <p style={{color:C.textMid,fontSize:14,lineHeight:1.6}}>{moodToday?`Today you're feeling ${moodToday.label.toLowerCase()} ${moodToday.emoji}`:"How are you today?"}</p>
+        </div>
       </Fade>
 
+      {/* Daily mood card — hero if not logged today */}
+      {!moodToday ? (
+        <Fade delay={150}>
+          <button onClick={onMoodCheck} style={{
+            width:"100%",padding:"20px",borderRadius:22,
+            border:"none",
+            background:`linear-gradient(135deg,${C.peach} 0%,#d9704a 100%)`,
+            color:C.white,cursor:"pointer",textAlign:"left",fontFamily:FB,
+            display:"flex",alignItems:"center",gap:14,marginBottom:14,
+            boxShadow:`0 8px 24px ${C.peach}55`,
+            position:"relative",overflow:"hidden",
+          }}>
+            <div style={{width:52,height:52,borderRadius:16,background:"rgba(255,255,255,0.25)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:28,flexShrink:0,backdropFilter:"blur(4px)"}}>💭</div>
+            <div style={{flex:1}}>
+              <div style={{fontWeight:800,fontSize:16,marginBottom:2}}>Check in with yourself</div>
+              <div style={{fontSize:12,opacity:0.92}}>Just 10 seconds · Mood + optional note</div>
+            </div>
+            <span style={{fontSize:22}}>›</span>
+          </button>
+        </Fade>
+      ) : (
+        <Fade delay={150}>
+          <Card style={{marginBottom:14,background:`linear-gradient(135deg,${C.sageLight} 0%,#f0faf4 100%)`,border:`1.5px solid ${C.sage}44`}}>
+            <div style={{display:"flex",alignItems:"center",gap:12}}>
+              <div style={{fontSize:32}}>{moodToday.emoji}</div>
+              <div style={{flex:1}}>
+                <div style={{color:C.sage,fontWeight:800,fontSize:13,marginBottom:2}}>✓ Checked in today</div>
+                <div style={{color:C.textMid,fontSize:13,lineHeight:1.5}}>
+                  {moodToday.note?<em>"{moodToday.note}"</em>:`Feeling ${moodToday.label.toLowerCase()}`}
+                </div>
+              </div>
+            </div>
+          </Card>
+        </Fade>
+      )}
+
+      {/* Mood calendar */}
+      {moodLog?.length>0 && (
+        <Fade delay={220}>
+          <Card style={{marginBottom:14,padding:"16px 18px"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+              <div style={{color:C.textSoft,fontSize:11,fontWeight:800,textTransform:"uppercase",letterSpacing:1.2}}>Your last 14 days</div>
+              <div style={{color:C.peach,fontSize:11,fontWeight:700}}>{moodLog.length} {moodLog.length===1?"check-in":"check-ins"}</div>
+            </div>
+            <MoodCalendar log={moodLog} days={14}/>
+          </Card>
+        </Fade>
+      )}
+
+      {/* Assessment history reminder */}
+      {lastAssessment && (
+        <Fade delay={280}>
+          <Card style={{marginBottom:14,padding:"16px 18px"}}>
+            <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
+              <div style={{width:40,height:40,borderRadius:12,background:C.skyLight,display:"flex",alignItems:"center",justifyContent:"center",fontSize:20}}>📊</div>
+              <div style={{flex:1}}>
+                <div style={{color:C.textSoft,fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:1}}>Last assessment</div>
+                <div style={{color:C.text,fontSize:14,fontWeight:700}}>{daysSinceLastAssessment===0?"Today":daysSinceLastAssessment===1?"Yesterday":`${daysSinceLastAssessment} days ago`}</div>
+              </div>
+              <div style={{textAlign:"right"}}>
+                <div style={{color:C.sky,fontSize:11,fontWeight:700}}>PHQ-9 {lastAssessment.phq9}</div>
+                <div style={{color:C.sage,fontSize:11,fontWeight:700}}>GAD-7 {lastAssessment.gad7}</div>
+              </div>
+            </div>
+            {daysSinceLastAssessment>=14 && (
+              <button onClick={onFull} style={{
+                width:"100%",padding:"10px",
+                background:C.peachLight,border:`1.5px solid ${C.peach}44`,
+                borderRadius:12,color:C.peach,fontSize:13,fontWeight:800,
+                cursor:"pointer",fontFamily:FB,
+              }}>
+                🌱 It's been {daysSinceLastAssessment} days — time for another check
+              </button>
+            )}
+          </Card>
+        </Fade>
+      )}
+
+      {/* Quick actions */}
       <Fade delay={350}>
-        <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:18}}>
+        <div style={{color:C.textSoft,fontSize:11,fontWeight:800,textTransform:"uppercase",letterSpacing:1.2,marginBottom:10,marginTop:18}}>What would you like to do?</div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
+          <button onClick={onQuick} style={{
+            padding:"18px 14px",borderRadius:18,
+            border:`2px solid ${C.teal}55`,background:C.tealLight,
+            cursor:"pointer",textAlign:"center",fontFamily:FB,
+          }}>
+            <div style={{fontSize:28,marginBottom:6}}>⚡</div>
+            <div style={{color:C.teal,fontWeight:800,fontSize:13}}>Quick Check</div>
+            <div style={{color:C.textSoft,fontSize:10,marginTop:2}}>90 seconds</div>
+          </button>
+          <button onClick={onExercises} style={{
+            padding:"18px 14px",borderRadius:18,
+            border:`2px solid ${C.sage}55`,background:C.sageLight,
+            cursor:"pointer",textAlign:"center",fontFamily:FB,
+          }}>
+            <div style={{fontSize:28,marginBottom:6}}>🌿</div>
+            <div style={{color:C.sage,fontWeight:800,fontSize:13}}>Calm down</div>
+            <div style={{color:C.textSoft,fontSize:10,marginTop:2}}>Breathing & more</div>
+          </button>
+        </div>
+        <button onClick={onFull} style={{
+          width:"100%",padding:"14px 18px",borderRadius:16,
+          border:`1.5px solid ${C.border}`,background:C.card,
+          cursor:"pointer",textAlign:"left",fontFamily:FB,
+          display:"flex",alignItems:"center",gap:12,
+        }}>
+          <div style={{width:40,height:40,borderRadius:12,background:C.peachLight,display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,flexShrink:0}}>📋</div>
+          <div style={{flex:1}}>
+            <div style={{color:C.text,fontWeight:700,fontSize:14}}>Full assessment</div>
+            <div style={{color:C.textSoft,fontSize:11,marginTop:1}}>10–15 min · detailed report</div>
+          </div>
+          <span style={{color:C.textMuted,fontSize:20}}>›</span>
+        </button>
+        {lastAssessment && (
+          <button onClick={onResultsView} style={{
+            width:"100%",marginTop:8,padding:"12px",
+            background:"none",border:"none",
+            color:C.sky,fontSize:13,fontWeight:700,fontFamily:FB,cursor:"pointer",
+          }}>
+            View your last results →
+          </button>
+        )}
+      </Fade>
+
+      {/* Footer */}
+      <Fade delay={450}>
+        <div style={{background:C.roseLight,border:`1.5px solid ${C.rose}44`,borderRadius:14,padding:"11px 14px",marginTop:20,marginBottom:12,textAlign:"left"}}>
+          <div style={{color:C.rose,fontWeight:800,fontSize:12,marginBottom:2}}>💙 Need to talk to someone?</div>
+          <div style={{color:C.textMid,fontSize:11,lineHeight:1.65}}>Tap the 💙 button anytime · iCall <strong>9152987821</strong></div>
+        </div>
+        <div style={{display:"flex",gap:14,justifyContent:"center",fontSize:11}}>
+          <button onClick={onPrivacy} style={{background:"none",border:"none",color:C.textSoft,textDecoration:"underline",cursor:"pointer",fontFamily:FB,fontSize:11}}>🔒 Privacy</button>
+          <button onClick={onRefs} style={{background:"none",border:"none",color:C.textSoft,textDecoration:"underline",cursor:"pointer",fontFamily:FB,fontSize:11}}>📚 References</button>
+        </div>
+      </Fade>
+    </div>
+  );
+}
+
+/* ─── Welcome — animated warm home ───────────────────────────────── */
+function AnimatedHero(){
+  // Soft animated illustration: breathing flower with floating particles
+  return(
+    <div style={{position:"relative",width:180,height:180,margin:"0 auto 14px"}}>
+      {/* ambient glow rings */}
+      <div style={{position:"absolute",inset:0,borderRadius:"50%",background:`radial-gradient(circle,${C.peach}22 0%,transparent 70%)`,animation:"mhBreathe 4.5s ease-in-out infinite"}}/>
+      <div style={{position:"absolute",inset:20,borderRadius:"50%",background:`radial-gradient(circle,${C.sage}22 0%,transparent 70%)`,animation:"mhBreathe 4.5s ease-in-out infinite 1.5s"}}/>
+      <div style={{position:"absolute",inset:40,borderRadius:"50%",background:`radial-gradient(circle,${C.lavender}22 0%,transparent 70%)`,animation:"mhBreathe 4.5s ease-in-out infinite 3s"}}/>
+
+      {/* floating particles */}
+      <div style={{position:"absolute",top:18,left:30,fontSize:14,animation:"mhFloat1 6s ease-in-out infinite"}}>✨</div>
+      <div style={{position:"absolute",top:35,right:22,fontSize:12,animation:"mhFloat2 7s ease-in-out infinite 1s"}}>🌿</div>
+      <div style={{position:"absolute",bottom:30,left:20,fontSize:12,animation:"mhFloat3 5.5s ease-in-out infinite 0.5s"}}>💛</div>
+      <div style={{position:"absolute",bottom:22,right:32,fontSize:14,animation:"mhFloat1 8s ease-in-out infinite 2s"}}>✨</div>
+
+      {/* centre flower */}
+      <div style={{
+        position:"absolute",inset:0,
+        display:"flex",alignItems:"center",justifyContent:"center",
+        fontSize:78,
+        animation:"mhBloom 4.5s ease-in-out infinite",
+        filter:"drop-shadow(0 6px 16px rgba(232,132,90,0.25))",
+      }}>🌸</div>
+
+      <style>{`
+        @keyframes mhBreathe{0%,100%{transform:scale(1);opacity:.6}50%{transform:scale(1.12);opacity:1}}
+        @keyframes mhBloom{0%,100%{transform:scale(1) rotate(-2deg)}50%{transform:scale(1.08) rotate(2deg)}}
+        @keyframes mhFloat1{0%,100%{transform:translateY(0) rotate(0deg);opacity:.6}50%{transform:translateY(-10px) rotate(10deg);opacity:1}}
+        @keyframes mhFloat2{0%,100%{transform:translateY(0) rotate(0deg);opacity:.7}50%{transform:translateY(-8px) rotate(-8deg);opacity:1}}
+        @keyframes mhFloat3{0%,100%{transform:translateY(0);opacity:.7}50%{transform:translateY(-6px);opacity:1}}
+      `}</style>
+    </div>
+  );
+}
+
+function WelcomeScreen({onQuick,onFull,onMoodCheck,onPrivacy,onRefs}){
+  // Rotating greeting based on time of day
+  const hour=new Date().getHours();
+  const greeting=hour<5?"Hello, night owl":hour<12?"Good morning":hour<17?"Good afternoon":hour<21?"Good evening":"Hello, night owl";
+
+  return(
+    <div style={{paddingTop:12}}>
+      {/* Hero with animated illustration */}
+      <div style={{textAlign:"center",marginBottom:8}}>
+        <AnimatedHero/>
+        <Fade delay={100}>
+          <p style={{color:C.textSoft,fontSize:13,fontWeight:700,marginBottom:4}}>{greeting} 🌿</p>
+          <h1 style={{fontFamily:FD,fontSize:38,fontWeight:700,color:C.text,marginBottom:4,letterSpacing:-0.5}}>ManaScreen</h1>
+          <p style={{color:C.peach,fontFamily:FD,fontSize:16,fontStyle:"italic",marginBottom:2,lineHeight:1.5,maxWidth:320,marginLeft:"auto",marginRight:"auto"}}>A private space to understand how you're really feeling.</p>
+        </Fade>
+      </div>
+
+      {/* Primary CTA — Quick Check (big, inviting) */}
+      <Fade delay={250}>
+        <button onClick={onQuick} style={{
+          width:"100%",padding:"22px 20px",borderRadius:24,
+          border:"none",
+          background:`linear-gradient(135deg,${C.peach} 0%,#d9704a 100%)`,
+          color:C.white,cursor:"pointer",textAlign:"left",fontFamily:FB,
+          display:"flex",alignItems:"center",gap:14,marginTop:18,marginBottom:12,
+          boxShadow:`0 10px 28px ${C.peach}55`,
+          position:"relative",overflow:"hidden",
+        }}>
+          {/* shine animation */}
+          <div style={{position:"absolute",top:0,left:-80,width:80,height:"100%",background:"linear-gradient(90deg,transparent,rgba(255,255,255,0.3),transparent)",animation:"heroShine 3.5s ease-in-out infinite"}}/>
+          <div style={{width:56,height:56,borderRadius:16,background:"rgba(255,255,255,0.25)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:30,flexShrink:0,backdropFilter:"blur(4px)"}}>⚡</div>
+          <div style={{flex:1,zIndex:1}}>
+            <div style={{fontWeight:800,fontSize:17,marginBottom:3}}>Start with a quick check</div>
+            <div style={{fontSize:12,opacity:0.92,lineHeight:1.4}}>Just 4 questions · Takes 90 seconds</div>
+          </div>
+          <div style={{fontSize:26,zIndex:1}}>→</div>
+          <style>{`@keyframes heroShine{0%,100%{transform:translateX(0)}50%{transform:translateX(500px)}}`}</style>
+        </button>
+      </Fade>
+
+      {/* Secondary CTA — Full assessment (understated) */}
+      <Fade delay={350}>
+        <button onClick={onFull} style={{
+          width:"100%",padding:"15px 18px",borderRadius:18,
+          border:`1.5px solid ${C.border}`,background:C.card,
+          cursor:"pointer",textAlign:"left",fontFamily:FB,
+          display:"flex",alignItems:"center",gap:12,marginBottom:18,
+        }}>
+          <div style={{width:40,height:40,borderRadius:12,background:C.peachLight,display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,flexShrink:0}}>📋</div>
+          <div style={{flex:1}}>
+            <div style={{color:C.text,fontWeight:700,fontSize:14}}>Or take the full assessment</div>
+            <div style={{color:C.textSoft,fontSize:11,marginTop:1}}>10–15 minutes · clinical report for your doctor</div>
+          </div>
+          <span style={{color:C.textMuted,fontSize:20}}>›</span>
+        </button>
+      </Fade>
+
+      {/* Trust row — compact horizontal */}
+      <Fade delay={450}>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:18}}>
           {[
-            [C.sage,"🔒","No tracking","No cookies, no analytics, nothing saved"],
-            [C.sky,"🏥","Clinically validated","PHQ-9, GAD-7, MDQ, C-SSRS + more"],
-            [C.amber,"🌿","Adaptive","Questions adjust to your answers"],
-            [C.lavender,"📄","Shareable","PDF report for your doctor"],
-          ].map(([col,icon,title,sub])=>(
-            <div key={title} style={{display:"flex",gap:12,alignItems:"center",padding:"10px 12px",background:col+"10",borderRadius:10,border:`1px solid ${col}25`}}>
-              <span style={{fontSize:18}}>{icon}</span>
-              <div style={{textAlign:"left",flex:1}}><div style={{fontWeight:800,color:C.text,fontSize:12}}>{title}</div><div style={{color:C.textSoft,fontSize:11}}>{sub}</div></div>
+            {icon:"🔒",title:"Private",sub:"Nothing saved"},
+            {icon:"🏥",title:"Clinical",sub:"DSM-5 aligned"},
+            {icon:"🇮🇳",title:"For India",sub:"Built by a doctor"},
+          ].map(t=>(
+            <div key={t.title} style={{textAlign:"center",padding:"12px 8px",background:C.card,borderRadius:14,border:`1px solid ${C.border}`}}>
+              <div style={{fontSize:22,marginBottom:4}}>{t.icon}</div>
+              <div style={{color:C.text,fontWeight:800,fontSize:12}}>{t.title}</div>
+              <div style={{color:C.textSoft,fontSize:10,marginTop:1}}>{t.sub}</div>
             </div>
           ))}
         </div>
       </Fade>
 
-      <Fade delay={450}>
-        <div style={{background:C.roseLight,border:`1.5px solid ${C.rose}44`,borderRadius:14,padding:"12px 14px",marginBottom:16,textAlign:"left"}}>
+      {/* Gentle invitation quote */}
+      <Fade delay={550}>
+        <Card style={{marginBottom:16,background:`linear-gradient(135deg,${C.peachLight} 0%,#fff4ee 100%)`,border:`1.5px solid ${C.peach}33`,textAlign:"center"}}>
+          <p style={{fontFamily:FD,color:C.textMid,fontSize:15,lineHeight:1.8,fontStyle:"italic"}}>"You don't have to figure it all out today. Just showing up here is enough."</p>
+        </Card>
+      </Fade>
+
+      {/* Crisis note */}
+      <Fade delay={650}>
+        <div style={{background:C.roseLight,border:`1.5px solid ${C.rose}44`,borderRadius:14,padding:"12px 14px",marginBottom:14,textAlign:"left"}}>
           <div style={{color:C.rose,fontWeight:800,fontSize:12,marginBottom:3}}>💙 Need help right now?</div>
           <div style={{color:C.textMid,fontSize:12,lineHeight:1.65}}>Tap the 💙 button anytime. iCall <strong>9152987821</strong> · Vandrevala <strong>1860-2662-345</strong></div>
         </div>
-        <div style={{display:"flex",gap:12,justifyContent:"center",fontSize:12}}>
+        <div style={{display:"flex",gap:14,justifyContent:"center",fontSize:12,marginBottom:8}}>
           <button onClick={onPrivacy} style={{background:"none",border:"none",color:C.textSoft,textDecoration:"underline",cursor:"pointer",fontFamily:FB,fontSize:12}}>🔒 Privacy</button>
           <button onClick={onRefs} style={{background:"none",border:"none",color:C.textSoft,textDecoration:"underline",cursor:"pointer",fontFamily:FB,fontSize:12}}>📚 References</button>
         </div>
@@ -2106,6 +2757,7 @@ function ResumePrompt({savedAt,onResume,onStartOver}){
 /* ─── ROOT APP ───────────────────────────────────────────────────── */
 const STEP={
   WELCOME:"welcome",
+  MOOD:"mood",
   QUICK:"quick", QUICK_RESULT:"quick_result",
   WHO:"who", PROFILE:"profile",
   MEDICAL:"medical", MEDS:"meds", DURATION:"duration",
@@ -2126,11 +2778,14 @@ export default function App(){
   const [who,setWho]=useState("self");
   const [data,setData]=useState({});
   const [history,setHistory]=useState([]);
+  const [moodLog,setMoodLog]=useState([]);
   const [helpOpen,setHelpOpen]=useState(false);
   const [showResume,setShowResume]=useState(false);
   const [savedState,setSavedState]=useState(null);
+  const [showInstallPrompt,setShowInstallPrompt]=useState(false);
+  const [installEvent,setInstallEvent]=useState(null);
 
-  // Load saved progress + history on mount
+  // Load saved progress + history + mood log on mount
   useEffect(()=>{
     try{
       const raw=window.localStorage?.getItem(SAVE_KEY);
@@ -2142,8 +2797,34 @@ export default function App(){
       }
       const hRaw=window.localStorage?.getItem(HISTORY_KEY);
       if(hRaw) setHistory(JSON.parse(hRaw));
+      const mRaw=window.localStorage?.getItem(MOODLOG_KEY);
+      if(mRaw) setMoodLog(JSON.parse(mRaw));
     }catch(e){}
+
+    // Register service worker for PWA (Feature 4)
+    if("serviceWorker" in navigator){
+      window.addEventListener("load",()=>{
+        navigator.serviceWorker.register("/sw.js").catch(()=>{});
+      });
+    }
+
+    // Capture install prompt for PWA
+    const handler=(e)=>{
+      e.preventDefault();
+      setInstallEvent(e);
+      // Only show prompt if user has used the app (has history or mood log)
+      const hasEngagement=storage.get(HISTORY_KEY,[]).length>0||storage.get(MOODLOG_KEY,[]).length>0;
+      if(hasEngagement) setTimeout(()=>setShowInstallPrompt(true),2000);
+    };
+    window.addEventListener("beforeinstallprompt",handler);
+    return()=>window.removeEventListener("beforeinstallprompt",handler);
   },[]);
+
+  // Refresh moodLog from storage when returning to welcome (in case mood was logged)
+  const refreshMoodLog=()=>{
+    const m=storage.get(MOODLOG_KEY,[]);
+    setMoodLog(m);
+  };
 
   // Auto-save on step/data change
   useEffect(()=>{
@@ -2237,6 +2918,43 @@ export default function App(){
       `}</style>
       <BgDecor/>
       <HelpNowButton active={helpOpen} onToggle={()=>setHelpOpen(h=>!h)}/>
+
+      {/* PWA install prompt (Feature 4) */}
+      {showInstallPrompt && installEvent && (
+        <div style={{
+          position:"fixed",top:16,left:16,right:16,zIndex:120,
+          maxWidth:410,margin:"0 auto",
+          background:C.white,
+          borderRadius:16,
+          border:`2px solid ${C.peach}`,
+          padding:"14px 16px",
+          boxShadow:"0 10px 32px rgba(0,0,0,0.18)",
+          display:"flex",alignItems:"center",gap:12,
+          animation:"pwaSlide 0.45s cubic-bezier(0.34,1.56,0.64,1)",
+        }}>
+          <div style={{fontSize:30}}>🌸</div>
+          <div style={{flex:1}}>
+            <div style={{color:C.text,fontWeight:800,fontSize:13,marginBottom:2}}>Add ManaScreen to home screen</div>
+            <div style={{color:C.textSoft,fontSize:11,lineHeight:1.5}}>Opens like a real app · works offline</div>
+          </div>
+          <button onClick={async ()=>{
+            try{
+              installEvent.prompt();
+              await installEvent.userChoice;
+            }catch(e){}
+            setShowInstallPrompt(false);
+            setInstallEvent(null);
+          }} style={{
+            padding:"8px 14px",background:C.peach,color:C.white,
+            border:"none",borderRadius:10,fontWeight:800,fontSize:12,
+            fontFamily:FB,cursor:"pointer",
+          }}>Install</button>
+          <button onClick={()=>setShowInstallPrompt(false)} style={{
+            background:"none",border:"none",color:C.textMuted,fontSize:18,cursor:"pointer",padding:"4px 6px",
+          }}>✕</button>
+          <style>{`@keyframes pwaSlide{from{transform:translateY(-30px);opacity:0}to{transform:translateY(0);opacity:1}}`}</style>
+        </div>
+      )}
       <div style={{position:"relative",zIndex:1,maxWidth:440,margin:"0 auto",padding:"24px 20px 90px"}}>
         {showResume ? (
           <ResumePrompt savedAt={savedState?.savedAt||Date.now()} onResume={resumeProgress} onStartOver={clearAndStart}/>
@@ -2252,11 +2970,31 @@ export default function App(){
             </div>
           )}
 
-          {step===STEP.WELCOME && <WelcomeScreen
-            onQuick={()=>setStep(STEP.QUICK)}
-            onFull={()=>setStep(STEP.WHO)}
-            onPrivacy={()=>setStep(STEP.PRIVACY)}
-            onRefs={()=>setStep(STEP.REFS)}/>}
+          {step===STEP.WELCOME && (
+            (history.length>0||moodLog.length>0) ? (
+              <ReturningDashboard
+                history={history}
+                moodLog={moodLog}
+                onMoodCheck={()=>setStep(STEP.MOOD)}
+                onQuick={()=>setStep(STEP.QUICK)}
+                onFull={()=>setStep(STEP.WHO)}
+                onExercises={()=>setStep(STEP.EXERCISES)}
+                onResultsView={()=>setStep(STEP.RESULT)}
+                onPrivacy={()=>setStep(STEP.PRIVACY)}
+                onRefs={()=>setStep(STEP.REFS)}/>
+            ) : (
+              <WelcomeScreen
+                onQuick={()=>setStep(STEP.QUICK)}
+                onFull={()=>setStep(STEP.WHO)}
+                onMoodCheck={()=>setStep(STEP.MOOD)}
+                onPrivacy={()=>setStep(STEP.PRIVACY)}
+                onRefs={()=>setStep(STEP.REFS)}/>
+            )
+          )}
+
+          {step===STEP.MOOD && <MoodCheckScreen
+            onDone={()=>{refreshMoodLog();setStep(STEP.WELCOME);}}
+            onBack={()=>setStep(STEP.WELCOME)}/>}
 
           {step===STEP.QUICK && <QuickCheckScreen
             onBack={()=>setStep(STEP.WELCOME)}
