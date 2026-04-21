@@ -20,6 +20,7 @@ const FB = "'Nunito', 'Segoe UI', sans-serif";
 const SAVE_KEY      = "manascreen_progress_v2";
 const HISTORY_KEY   = "manascreen_history_v1";
 const MOODLOG_KEY   = "manascreen_moodlog_v1";
+const JOURNAL_KEY   = "manascreen_journal_v1";
 const PREFS_KEY     = "manascreen_prefs_v1";
 const SAVE_EXPIRY_H = 24;
 
@@ -1265,20 +1266,381 @@ function SimpleExercise({exercise,onDone}){
   if(done)return(<div style={{textAlign:"center",padding:"32px 0"}}><div style={{fontSize:64,marginBottom:16}}>✨</div><h3 style={{fontFamily:FD,fontSize:22,color:C.text,marginBottom:10}}>Well done</h3><p style={{color:C.textMid,fontSize:15,lineHeight:1.75,marginBottom:28}}>Take a moment to notice how you feel.</p><WarmButton onClick={onDone}>← Back</WarmButton></div>);
   return(<div><div style={{height:5,background:C.border,borderRadius:3,overflow:"hidden",marginBottom:24}}><div style={{height:"100%",width:`${(step/exercise.instructions.length)*100}%`,background:exercise.color,borderRadius:3,transition:"width 0.4s"}}/></div><Card style={{background:exercise.bg,border:`1.5px solid ${exercise.color}33`,textAlign:"center",marginBottom:24,minHeight:140,display:"flex",alignItems:"center",justifyContent:"center"}}><p style={{fontFamily:FD,color:C.text,fontSize:18,lineHeight:1.7,fontWeight:600}}>{exercise.instructions[step]}</p></Card><p style={{color:C.textSoft,fontSize:13,textAlign:"center",marginBottom:20}}>Step {step+1} of {exercise.instructions.length} — take your time</p><WarmButton onClick={()=>{if(step+1<exercise.instructions.length)setStep(step+1);else setDone(true);}} style={{background:exercise.color,borderColor:exercise.color}}>{step+1<exercise.instructions.length?"Next step →":"Complete ✓"}</WarmButton></div>);
 }
-const ALL_EXERCISES=[
-  {id:"box",icon:"🫁",title:"Box Breathing",subtitle:"Calm your nervous system in 4 minutes",color:C.sky,bg:C.skyLight,why:"Box breathing activates your parasympathetic nervous system — 'rest and relax' mode — within minutes.",type:"breath",steps:[{label:"Breathe In",duration:4,instruction:"Slowly breathe in through your nose",color:C.sky},{label:"Hold",duration:4,instruction:"Hold gently",color:C.lavender},{label:"Breathe Out",duration:4,instruction:"Slowly breathe out",color:C.sage},{label:"Hold",duration:4,instruction:"Hold the empty breath",color:C.amber}],rounds:4},
-  {id:"478",icon:"🌬️",title:"4-7-8 Breathing",subtitle:"A natural tranquiliser",color:C.lavender,bg:C.lavenderLight,why:"The extended exhale triggers relaxation — especially useful before sleep or during panic.",type:"breath",steps:[{label:"Breathe In",duration:4,instruction:"Inhale through your nose",color:C.sky},{label:"Hold",duration:7,instruction:"Hold completely still",color:C.lavender},{label:"Breathe Out",duration:8,instruction:"Exhale fully through your mouth",color:C.sage}],rounds:4},
-  {id:"ground",icon:"🌿",title:"5-4-3-2-1 Grounding",subtitle:"Anchor yourself to the present",color:C.sage,bg:C.sageLight,why:"Grounds you in the present through your senses, interrupting anxious thought spirals.",type:"simple",instructions:["Name 5 things you can SEE right now","Touch 4 things — notice how they feel","Listen for 3 sounds in your environment","Notice 2 things you can smell","Notice 1 thing you can taste"]},
-  {id:"comp",icon:"💛",title:"Self-Compassion Pause",subtitle:"Speak to yourself kindly",color:C.peach,bg:C.peachLight,why:"Reduces the harsh inner criticism that depression amplifies.",type:"simple",instructions:["Place a hand on your heart and take a slow breath","Say: 'This is a moment of suffering'","Say: 'Suffering is part of being human — I am not alone'","Say: 'May I be kind to myself in this moment'","Rest here for 60 seconds"]},
+/* ─── Journal prompts (Feature 7) ────────────────────────────────── */
+const JOURNAL_PROMPTS = [
+  {icon:"🌿", q:"What has been the hardest part of this week?",             mood:"reflect"},
+  {icon:"🌸", q:"What's one small thing that still made you smile?",         mood:"gratitude"},
+  {icon:"💛", q:"What would you say to a friend feeling how you feel now?", mood:"compassion"},
+  {icon:"🌱", q:"If nothing had to change today — what would still be okay?",mood:"acceptance"},
+  {icon:"🪷", q:"What's weighing on your mind that you haven't said aloud?", mood:"release"},
+  {icon:"✨", q:"What would a gentle next step look like?",                  mood:"forward"},
+  {icon:"🫧", q:"What's one thing you want to let go of today?",             mood:"release"},
+  {icon:"🌻", q:"Who or what are you grateful for, however small?",          mood:"gratitude"},
 ];
 
-function ExercisesScreen({onDone}){
+/* ─── Journal screen ─────────────────────────────────────────────── */
+function JournalScreen({onDone,onBack,initialPrompt=null}){
+  // phases: pick | write | saved | list
+  const [phase,setPhase]=useState(initialPrompt?"write":"pick");
+  const [prompt,setPrompt]=useState(initialPrompt||JOURNAL_PROMPTS[0]);
+  const [text,setText]=useState("");
+  const [entries,setEntries]=useState(()=>storage.get(JOURNAL_KEY,[]));
+
+  const save=()=>{
+    if(!text.trim()) return;
+    const entry={when:Date.now(),prompt:prompt.q,text:text.trim(),icon:prompt.icon};
+    const updated=[...entries,entry].slice(-10); // keep last 10
+    storage.set(JOURNAL_KEY,updated);
+    setEntries(updated);
+    playChime("soft");
+    tapHaptic("medium");
+    setPhase("saved");
+  };
+
+  const deleteEntry=(idx)=>{
+    const updated=entries.filter((_,i)=>i!==idx);
+    storage.set(JOURNAL_KEY,updated);
+    setEntries(updated);
+  };
+
+  /* ── Prompt picker ─── */
+  if(phase==="pick"){
+    // show three random prompts + "browse all"
+    const shuffled=[...JOURNAL_PROMPTS].sort(()=>Math.random()-0.5).slice(0,3);
+    return(
+      <div>
+        <BackBar onBack={onBack}/>
+        <Fade>
+          <div style={{textAlign:"center",marginBottom:24}}>
+            <div style={{fontSize:50,marginBottom:10}}>📖</div>
+            <Pill color={C.lavender}>Private journal</Pill>
+            <h2 style={{fontFamily:FD,fontSize:26,color:C.text,margin:"12px 0 8px"}}>A gentle prompt</h2>
+            <p style={{color:C.textMid,fontSize:14,lineHeight:1.7,maxWidth:320,margin:"0 auto"}}>Pick one that speaks to you — or browse all. Everything stays private on your device.</p>
+          </div>
+        </Fade>
+        <div style={{display:"flex",flexDirection:"column",gap:10,marginBottom:16}}>
+          {shuffled.map((p,i)=>(
+            <Fade key={i} delay={i*80}>
+              <button onClick={()=>{tapHaptic("light");setPrompt(p);setPhase("write");}} style={{
+                display:"flex",alignItems:"center",gap:14,padding:"18px 18px",
+                background:`linear-gradient(135deg,${C.lavenderLight} 0%,#ffffff 100%)`,
+                border:`1.5px solid ${C.lavender}33`,borderRadius:18,
+                cursor:"pointer",textAlign:"left",width:"100%",fontFamily:FB,transition:"all 0.2s",
+              }}>
+                <div style={{fontSize:28,flexShrink:0}}>{p.icon}</div>
+                <div style={{flex:1,color:C.text,fontSize:14,fontWeight:600,lineHeight:1.5,fontFamily:FD}}>{p.q}</div>
+                <span style={{color:C.lavender,fontSize:20}}>›</span>
+              </button>
+            </Fade>
+          ))}
+        </div>
+        <Fade delay={260}>
+          <div style={{display:"flex",flexDirection:"column",gap:8}}>
+            <button onClick={()=>{
+              const shuffledAgain=[...JOURNAL_PROMPTS].sort(()=>Math.random()-0.5).slice(0,3);
+              tapHaptic("light");
+              // Force re-render by updating a dummy state via prompt swap
+              setPrompt(shuffledAgain[0]);setPhase("pick");
+            }} style={{
+              padding:"10px",background:"none",border:"none",
+              color:C.lavender,fontSize:13,fontWeight:700,fontFamily:FB,cursor:"pointer",
+            }}>🎲 Show different prompts</button>
+            {entries.length>0 && (
+              <button onClick={()=>setPhase("list")} style={{
+                padding:"10px",background:"none",border:`1px solid ${C.border}`,
+                borderRadius:12,color:C.textMid,fontSize:13,fontWeight:700,fontFamily:FB,cursor:"pointer",
+              }}>View your {entries.length} past {entries.length===1?"entry":"entries"} →</button>
+            )}
+          </div>
+        </Fade>
+      </div>
+    );
+  }
+
+  /* ── Writing view ─── */
+  if(phase==="write"){
+    return(
+      <div>
+        <BackBar onBack={()=>setPhase("pick")}/>
+        <Fade>
+          <div style={{marginBottom:18}}>
+            <Card style={{background:C.lavenderLight,border:`1.5px solid ${C.lavender}44`,padding:"18px 20px"}}>
+              <div style={{display:"flex",gap:12,alignItems:"flex-start"}}>
+                <div style={{fontSize:28,flexShrink:0}}>{prompt.icon}</div>
+                <div>
+                  <div style={{color:C.lavender,fontSize:11,fontWeight:800,textTransform:"uppercase",letterSpacing:1,marginBottom:6}}>Today's prompt</div>
+                  <p style={{fontFamily:FD,color:C.text,fontSize:17,lineHeight:1.55,fontWeight:600}}>{prompt.q}</p>
+                </div>
+              </div>
+            </Card>
+          </div>
+        </Fade>
+        <Fade delay={120}>
+          <textarea value={text} onChange={e=>setText(e.target.value)}
+            placeholder="There's no right way to answer. Start anywhere…"
+            rows={10}
+            autoFocus
+            style={{
+              width:"100%",padding:"16px 18px",
+              borderRadius:16,
+              border:`1.5px solid ${C.border}`,
+              background:C.card,
+              color:C.text,fontSize:15,fontFamily:FB,
+              lineHeight:1.75,outline:"none",resize:"vertical",marginBottom:8,minHeight:180,
+            }}
+            maxLength={2000}/>
+          <div style={{color:C.textMuted,fontSize:11,textAlign:"right",marginBottom:16}}>{text.length}/2000 · private to this device</div>
+        </Fade>
+        <Fade delay={220}>
+          <WarmButton onClick={save} variant="primary" style={{background:C.lavender,borderColor:C.lavender,opacity:text.trim()?1:0.5}}>
+            {text.trim()?"Save entry 🌿":"Write something to save"}
+          </WarmButton>
+          <button onClick={()=>{tapHaptic("light");setPhase("pick");}} style={{display:"block",margin:"12px auto 0",background:"none",border:"none",color:C.textSoft,cursor:"pointer",fontSize:13,fontFamily:FB,textDecoration:"underline"}}>Try a different prompt</button>
+        </Fade>
+      </div>
+    );
+  }
+
+  /* ── Saved confirmation ─── */
+  if(phase==="saved"){
+    return(
+      <div style={{textAlign:"center",paddingTop:40}}>
+        <Fade>
+          <div style={{fontSize:70,marginBottom:14,animation:"journalBloom 0.7s cubic-bezier(0.34,1.56,0.64,1)"}}>🌸</div>
+          <h2 style={{fontFamily:FD,fontSize:26,color:C.text,marginBottom:10}}>Saved</h2>
+          <p style={{color:C.textMid,fontSize:15,lineHeight:1.75,marginBottom:28,maxWidth:320,margin:"0 auto 28px"}}>Putting feelings into words is itself a kind of care. Your entry stays private on this device.</p>
+          <div style={{display:"flex",flexDirection:"column",gap:10,maxWidth:300,margin:"0 auto"}}>
+            <WarmButton onClick={()=>{setText("");setPhase("pick");}} variant="secondary">Write another</WarmButton>
+            <WarmButton onClick={onDone} variant="sage">Done 🌿</WarmButton>
+          </div>
+          <style>{`@keyframes journalBloom{0%{transform:scale(0.3);opacity:0}60%{transform:scale(1.15)}100%{transform:scale(1);opacity:1}}`}</style>
+        </Fade>
+      </div>
+    );
+  }
+
+  /* ── List of past entries ─── */
+  // phase === "list"
+  return(
+    <div>
+      <BackBar onBack={()=>setPhase("pick")}/>
+      <Fade>
+        <div style={{textAlign:"center",marginBottom:22}}>
+          <div style={{fontSize:44,marginBottom:8}}>📚</div>
+          <Pill color={C.lavender}>Your journal</Pill>
+          <h2 style={{fontFamily:FD,fontSize:22,color:C.text,margin:"12px 0 6px"}}>Past entries</h2>
+          <p style={{color:C.textMid,fontSize:13,lineHeight:1.6}}>The last {entries.length} entries — private to this device</p>
+        </div>
+      </Fade>
+      <div style={{display:"flex",flexDirection:"column",gap:10,marginBottom:18}}>
+        {[...entries].reverse().map((e,revIdx)=>{
+          const originalIdx=entries.length-1-revIdx;
+          const when=new Date(e.when);
+          const dateStr=when.toLocaleDateString("en-IN",{day:"numeric",month:"short"})+" · "+when.toLocaleTimeString("en-IN",{hour:"numeric",minute:"2-digit"});
+          return(
+            <Fade key={e.when} delay={revIdx*50}>
+              <Card style={{padding:"14px 16px"}}>
+                <div style={{display:"flex",alignItems:"flex-start",gap:10,marginBottom:8}}>
+                  <div style={{fontSize:22,flexShrink:0}}>{e.icon}</div>
+                  <div style={{flex:1}}>
+                    <div style={{color:C.lavender,fontWeight:700,fontSize:11,marginBottom:2,textTransform:"uppercase",letterSpacing:0.8}}>{dateStr}</div>
+                    <div style={{color:C.text,fontFamily:FD,fontSize:14,fontWeight:600,lineHeight:1.4,marginBottom:8}}>{e.prompt}</div>
+                    <p style={{color:C.textMid,fontSize:13,lineHeight:1.7,whiteSpace:"pre-wrap"}}>{e.text}</p>
+                  </div>
+                  <button onClick={()=>{
+                    if(confirm("Delete this entry?")) deleteEntry(originalIdx);
+                  }} style={{background:"none",border:"none",color:C.textMuted,fontSize:16,cursor:"pointer",flexShrink:0,padding:"2px 4px"}} title="Delete">✕</button>
+                </div>
+              </Card>
+            </Fade>
+          );
+        })}
+      </div>
+      <WarmButton onClick={()=>setPhase("pick")} variant="primary" style={{background:C.lavender,borderColor:C.lavender}}>← Write a new entry</WarmButton>
+    </div>
+  );
+}
+
+/* ─── Feeling categories (Feature 6) ────────────────────────────── */
+const FEELINGS = [
+  {id:"panicky",   icon:"😰", title:"I feel panicky",      sub:"Racing heart, breathless, overwhelmed",  color:C.rose},
+  {id:"sleepless", icon:"🌙", title:"I can't sleep",       sub:"Restless mind, tossing & turning",         color:C.indigo},
+  {id:"overthink", icon:"🌀", title:"I'm overthinking",    sub:"Thoughts won't stop, ruminating",          color:C.lavender},
+  {id:"empty",     icon:"🕳️", title:"I feel empty",        sub:"Low, unmotivated, numb",                   color:C.sky},
+  {id:"angry",     icon:"🔥", title:"I'm angry or tense",  sub:"Irritable, wound-up, on edge",             color:C.peach},
+  {id:"all",       icon:"🌿", title:"Browse all exercises",sub:"The full library",                         color:C.sage},
+];
+
+/* ─── Expanded exercise library (Feature 6) ─────────────────────── */
+const ALL_EXERCISES=[
+  /* Panicky / anxious */
+  {id:"box",icon:"🫁",title:"Box Breathing",subtitle:"Calm your nervous system in 4 minutes",tags:["panicky","overthink","angry"],color:C.sky,bg:C.skyLight,
+    why:"Box breathing activates your parasympathetic nervous system — 'rest and relax' mode — within minutes.",type:"breath",rounds:4,
+    steps:[{label:"Breathe In",duration:4,instruction:"Slowly breathe in through your nose",color:C.sky},{label:"Hold",duration:4,instruction:"Hold gently",color:C.lavender},{label:"Breathe Out",duration:4,instruction:"Slowly breathe out",color:C.sage},{label:"Hold",duration:4,instruction:"Hold the empty breath",color:C.amber}]},
+
+  {id:"478",icon:"🌬️",title:"4-7-8 Breathing",subtitle:"A natural tranquiliser",tags:["panicky","sleepless","angry"],color:C.lavender,bg:C.lavenderLight,
+    why:"The extended exhale triggers relaxation — especially useful before sleep or during panic.",type:"breath",rounds:4,
+    steps:[{label:"Breathe In",duration:4,instruction:"Inhale through your nose",color:C.sky},{label:"Hold",duration:7,instruction:"Hold completely still",color:C.lavender},{label:"Breathe Out",duration:8,instruction:"Exhale fully through your mouth",color:C.sage}]},
+
+  {id:"cool",icon:"❄️",title:"Cool Breath",subtitle:"For sudden panic or heat",tags:["panicky","angry"],color:C.sky,bg:C.skyLight,
+    why:"Slow, cooling breath tones down a rising panic response.",type:"breath",rounds:5,
+    steps:[{label:"Breathe In",duration:5,instruction:"Inhale slowly through pursed lips — as if sipping air",color:C.sky},{label:"Breathe Out",duration:6,instruction:"Long, soft exhale through your nose",color:C.sage}]},
+
+  {id:"ground",icon:"🌿",title:"5-4-3-2-1 Grounding",subtitle:"Anchor to the present",tags:["panicky","overthink"],color:C.sage,bg:C.sageLight,
+    why:"Uses your senses to interrupt anxious thought spirals and bring you back to now.",type:"simple",
+    instructions:["Name 5 things you can SEE right now","Touch 4 things — notice how they feel","Listen for 3 sounds in your environment","Notice 2 things you can smell","Notice 1 thing you can taste"]},
+
+  {id:"butterfly",icon:"🦋",title:"Butterfly Hug",subtitle:"Self-soothing bilateral tap",tags:["panicky","empty"],color:C.peach,bg:C.peachLight,
+    why:"Bilateral stimulation (used in trauma therapy) helps calm an activated nervous system.",type:"simple",
+    instructions:["Cross your arms over your chest — hands on opposite shoulders","Close your eyes if comfortable","Tap your shoulders alternately, slowly: left, right, left, right","Continue for 30–60 seconds at a gentle rhythm","Notice your breath slowing naturally"]},
+
+  /* Sleepless */
+  {id:"bodyscan",icon:"🛏️",title:"Body Scan for Sleep",subtitle:"Release tension head to toe",tags:["sleepless","panicky"],color:C.indigo,bg:C.indigoLight,
+    why:"A body scan releases accumulated tension and signals your body it's safe to rest.",type:"simple",
+    instructions:["Lie down comfortably. Take 3 slow breaths","Notice your face — let your jaw, forehead, and eyes soften","Move awareness to your shoulders — let them drop","Notice your arms — let them feel heavy","Soften your chest and belly with each breath","Notice your hips and legs — let them melt into the bed","Feel your feet — let them be still and warm","Rest in this softness for as long as you like"]},
+
+  {id:"countdown",icon:"🌙",title:"Descending Countdown",subtitle:"Slow your mind to sleep",tags:["sleepless","overthink"],color:C.indigo,bg:C.indigoLight,
+    why:"Counting backwards slowly occupies the mind and prevents rumination.",type:"simple",
+    instructions:["Lie down. Close your eyes","Start counting backwards from 100","Say each number gently in your mind as you exhale","If your mind wanders, just return to the last number you remember","If you reach 1, start again from 100","The goal isn't to finish — it's to let your mind soften"]},
+
+  /* Overthinking / rumination */
+  {id:"leaves",icon:"🍃",title:"Leaves on a Stream",subtitle:"Let thoughts pass",tags:["overthink","empty"],color:C.sage,bg:C.sageLight,
+    why:"A classic ACT (Acceptance & Commitment Therapy) practice for not getting hooked by thoughts.",type:"simple",
+    instructions:["Imagine sitting beside a gentle stream","Each time a thought arrives, picture placing it on a leaf","Watch the leaf float away down the stream","Don't try to push thoughts away — just keep placing them on leaves","Some leaves drift slowly, some quickly — that's okay","Continue for 2–3 minutes"]},
+
+  {id:"naming",icon:"🔖",title:"Name the Thought",subtitle:"Create distance from rumination",tags:["overthink"],color:C.lavender,bg:C.lavenderLight,
+    why:"Naming a thought pattern (e.g. 'this is catastrophising') reduces its grip.",type:"simple",
+    instructions:["Notice what thought is looping","Say to yourself: 'I'm noticing the thought that…'","For example: 'I'm noticing the thought that I'm a failure'","This small shift moves you from IN the thought to observing it","Notice — is this thought helpful right now, or just familiar?","You don't have to solve it. Just notice it came by."]},
+
+  /* Empty / low */
+  {id:"comp",icon:"💛",title:"Self-Compassion Pause",subtitle:"Speak to yourself kindly",tags:["empty","overthink","angry"],color:C.peach,bg:C.peachLight,
+    why:"Reduces the harsh inner criticism that depression amplifies.",type:"simple",
+    instructions:["Place a hand on your heart and take a slow breath","Say: 'This is a moment of suffering'","Say: 'Suffering is part of being human — I am not alone'","Say: 'May I be kind to myself in this moment'","Rest here for 60 seconds"]},
+
+  {id:"tinything",icon:"🌱",title:"One Tiny Thing",subtitle:"Behavioural activation",tags:["empty"],color:C.sage,bg:C.sageLight,
+    why:"Depression tells you nothing will help. Doing one small thing breaks that spell — it's the core of behavioural activation therapy.",type:"simple",
+    instructions:["Pick ONE tiny thing you could do right now","Examples: drink a glass of water · open a window · stretch once · text one person 'hi'","Don't wait until you feel motivated — motivation comes AFTER action","Do the tiny thing now","Notice — even by 5% — how you feel differently","That counts. That's progress."]},
+
+  {id:"gratitude",icon:"🌸",title:"Three Small Gratitudes",subtitle:"Gentle noticing",tags:["empty"],color:C.peach,bg:C.peachLight,
+    why:"Noticing small good things rewires attention away from the negative filter depression creates.",type:"simple",
+    instructions:["Think of three tiny things from the last 24 hours that weren't terrible","They don't need to be 'meaningful' — small counts","Example: warm tea · a soft pillow · a kind message · a patch of sky","Say each one slowly in your mind","Notice how even tiny good things exist — even on hard days"]},
+
+  /* Angry / tense */
+  {id:"release",icon:"💨",title:"Release Breath",subtitle:"Let out the charge",tags:["angry"],color:C.peach,bg:C.peachLight,
+    why:"Anger carries physical energy. This helps discharge it safely.",type:"breath",rounds:5,
+    steps:[{label:"Breathe In",duration:3,instruction:"Sharp inhale through your nose",color:C.amber},{label:"Breathe Out",duration:6,instruction:"Sigh it out through your mouth — audibly if alone",color:C.sage}]},
+
+  {id:"pmr",icon:"💪",title:"Quick Muscle Release",subtitle:"Tense and relax",tags:["angry","sleepless"],color:C.teal,bg:C.tealLight,
+    why:"Progressive muscle relaxation — tense then release — drops physical tension held in the body.",type:"simple",
+    instructions:["Clench your fists tightly for 5 seconds, then release","Shrug your shoulders up to your ears for 5 seconds, then drop","Tighten your jaw and face for 5 seconds, then soften","Press your feet into the floor for 5 seconds, then relax","Notice the difference between tense and relaxed","Take three slow breaths"]},
+];
+
+function ExercisesScreen({onDone,initialFeeling=null}){
+  const [feeling,setFeeling]=useState(initialFeeling);
   const [active,setActive]=useState(null);
+
+  // If user drilled into an exercise
   if(active){
     const ex=ALL_EXERCISES.find(e=>e.id===active);
-    return(<div><BackBar onBack={()=>setActive(null)} label="Back to exercises"/><Fade><div style={{marginBottom:20}}><div style={{fontSize:44,marginBottom:8}}>{ex.icon}</div><h2 style={{fontFamily:FD,fontSize:24,color:C.text,marginBottom:6}}>{ex.title}</h2><div style={{background:ex.bg,border:`1.5px solid ${ex.color}33`,borderRadius:14,padding:"14px 16px",marginBottom:20}}><div style={{color:ex.color,fontWeight:800,fontSize:13,marginBottom:4}}>💡 Why this helps</div><p style={{color:C.textMid,fontSize:14,lineHeight:1.7}}>{ex.why}</p></div></div>{ex.type==="breath"?<BreathingExercise exercise={ex} onDone={()=>setActive(null)}/>:<SimpleExercise exercise={ex} onDone={()=>setActive(null)}/>}</Fade></div>);
+    return(
+      <div>
+        <BackBar onBack={()=>setActive(null)} label="Back to exercises"/>
+        <Fade>
+          <div style={{marginBottom:20}}>
+            <div style={{fontSize:44,marginBottom:8}}>{ex.icon}</div>
+            <h2 style={{fontFamily:FD,fontSize:24,color:C.text,marginBottom:6}}>{ex.title}</h2>
+            <div style={{background:ex.bg,border:`1.5px solid ${ex.color}33`,borderRadius:14,padding:"14px 16px",marginBottom:20}}>
+              <div style={{color:ex.color,fontWeight:800,fontSize:13,marginBottom:4}}>💡 Why this helps</div>
+              <p style={{color:C.textMid,fontSize:14,lineHeight:1.7}}>{ex.why}</p>
+            </div>
+          </div>
+          {ex.type==="breath"?<BreathingExercise exercise={ex} onDone={()=>setActive(null)}/>:<SimpleExercise exercise={ex} onDone={()=>setActive(null)}/>}
+        </Fade>
+      </div>
+    );
   }
-  return(<div><BackBar onBack={onDone} label="Back to results"/><Fade><div style={{textAlign:"center",marginBottom:24}}><div style={{fontSize:48,marginBottom:10}}>🌿</div><Pill color={C.sage}>Calming Exercises</Pill><h2 style={{fontFamily:FD,fontSize:24,color:C.text,margin:"12px 0 8px"}}>Try an exercise</h2><p style={{color:C.textMid,fontSize:14,lineHeight:1.7}}>Evidence-based tools to help you feel better right now.</p></div></Fade><div style={{display:"flex",flexDirection:"column",gap:10,marginBottom:24}}>{ALL_EXERCISES.map((ex,i)=><Fade key={ex.id} delay={i*80}><button onClick={()=>setActive(ex.id)} style={{display:"flex",alignItems:"center",gap:14,padding:"16px 18px",background:C.card,border:`1.5px solid ${C.border}`,borderRadius:18,cursor:"pointer",textAlign:"left",width:"100%",fontFamily:FB,transition:"all 0.2s"}}><div style={{width:48,height:48,borderRadius:14,background:ex.bg,display:"flex",alignItems:"center",justifyContent:"center",fontSize:24,flexShrink:0}}>{ex.icon}</div><div style={{flex:1}}><div style={{color:C.text,fontWeight:800,fontSize:14,marginBottom:2}}>{ex.title}</div><div style={{color:C.textSoft,fontSize:12}}>{ex.subtitle}</div></div><span style={{color:C.textMuted,fontSize:20}}>›</span></button></Fade>)}</div></div>);
+
+  // If user picked a feeling category — show matching exercises
+  if(feeling){
+    const f=FEELINGS.find(x=>x.id===feeling);
+    const filtered=feeling==="all"?ALL_EXERCISES:ALL_EXERCISES.filter(e=>e.tags.includes(feeling));
+    return(
+      <div>
+        <BackBar onBack={()=>setFeeling(null)} label="Back"/>
+        <Fade>
+          <div style={{textAlign:"center",marginBottom:22}}>
+            <div style={{fontSize:44,marginBottom:8}}>{f.icon}</div>
+            <Pill color={f.color}>For when you feel this way</Pill>
+            <h2 style={{fontFamily:FD,fontSize:22,color:C.text,margin:"12px 0 6px"}}>{f.title}</h2>
+            <p style={{color:C.textMid,fontSize:13,lineHeight:1.6}}>{filtered.length} {filtered.length===1?"exercise":"exercises"} that can help</p>
+          </div>
+        </Fade>
+        <div style={{display:"flex",flexDirection:"column",gap:10,marginBottom:24}}>
+          {filtered.map((ex,i)=>(
+            <Fade key={ex.id} delay={i*60}>
+              <button onClick={()=>{tapHaptic("light");setActive(ex.id);}} style={{
+                display:"flex",alignItems:"center",gap:14,padding:"16px 18px",
+                background:C.card,border:`1.5px solid ${C.border}`,borderRadius:18,
+                cursor:"pointer",textAlign:"left",width:"100%",fontFamily:FB,transition:"all 0.2s",
+              }}>
+                <div style={{
+                  width:48,height:48,borderRadius:14,
+                  background:ex.bg,display:"flex",alignItems:"center",justifyContent:"center",
+                  fontSize:24,flexShrink:0,
+                }}>{ex.icon}</div>
+                <div style={{flex:1}}>
+                  <div style={{color:C.text,fontWeight:800,fontSize:14,marginBottom:2}}>{ex.title}</div>
+                  <div style={{color:C.textSoft,fontSize:12}}>{ex.subtitle}</div>
+                  <div style={{color:ex.color,fontSize:10,fontWeight:700,marginTop:3,textTransform:"uppercase",letterSpacing:0.8}}>
+                    {ex.type==="breath"?`🫁 ${ex.rounds||4} rounds · ~${Math.round((ex.steps.reduce((s,st)=>s+st.duration,0)*(ex.rounds||4))/60)} min`:`🌿 ${ex.instructions.length} steps`}
+                  </div>
+                </div>
+                <span style={{color:C.textMuted,fontSize:20}}>›</span>
+              </button>
+            </Fade>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  // Feeling picker (default view)
+  return(
+    <div>
+      <BackBar onBack={onDone} label="Back"/>
+      <Fade>
+        <div style={{textAlign:"center",marginBottom:26}}>
+          <div style={{fontSize:52,marginBottom:10}}>🌿</div>
+          <Pill color={C.sage}>Calm down</Pill>
+          <h2 style={{fontFamily:FD,fontSize:26,color:C.text,margin:"12px 0 8px"}}>How are you feeling?</h2>
+          <p style={{color:C.textMid,fontSize:14,lineHeight:1.7,maxWidth:320,margin:"0 auto"}}>Pick what fits, and we'll suggest exercises that can help right now.</p>
+        </div>
+      </Fade>
+      <div style={{display:"flex",flexDirection:"column",gap:10}}>
+        {FEELINGS.map((f,i)=>(
+          <Fade key={f.id} delay={i*70}>
+            <button onClick={()=>{tapHaptic("light");setFeeling(f.id);}} style={{
+              display:"flex",alignItems:"center",gap:14,padding:"16px 18px",
+              background:`linear-gradient(135deg,${f.color}0e 0%,#ffffff 100%)`,
+              border:`1.5px solid ${f.color}44`,borderRadius:18,
+              cursor:"pointer",textAlign:"left",width:"100%",fontFamily:FB,transition:"all 0.2s",
+            }}>
+              <div style={{
+                width:48,height:48,borderRadius:14,
+                background:f.color+"22",display:"flex",alignItems:"center",justifyContent:"center",
+                fontSize:26,flexShrink:0,
+              }}>{f.icon}</div>
+              <div style={{flex:1}}>
+                <div style={{color:f.color,fontWeight:800,fontSize:15,marginBottom:1}}>{f.title}</div>
+                <div style={{color:C.textSoft,fontSize:12}}>{f.sub}</div>
+              </div>
+              <span style={{color:f.color,fontSize:20}}>›</span>
+            </button>
+          </Fade>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 /* ─── Actionable next step generator ─────────────────────────────── */
@@ -1402,7 +1764,7 @@ function ComparisonCard({phq9,gad7}){
 }
 
 /* ─── Results screen ─────────────────────────────────────────────── */
-function ResultScreen({data,history,onExercises,onFAQ,onLearn,onPDF,onRetake}){
+function ResultScreen({data,history,onExercises,onFAQ,onLearn,onPDF,onJournal,onRetake}){
   const {phq9,gad7,phq9answers,gad7answers,phq15,mdq,trauma,sleep,psychosis,functional,medical,duration,profile,safety,meds}=data;
   const dep=phq9<=4?{label:"Minimal",color:C.sage,icon:"🌱"}:phq9<=9?{label:"Mild",color:C.sky,icon:"🌤️"}:phq9<=14?{label:"Moderate",color:C.amber,icon:"🌧️"}:phq9<=19?{label:"Moderately Severe",color:C.peach,icon:"🌩️"}:{label:"Severe",color:C.rose,icon:"⛈️"};
   const anx=gad7<=4?{label:"Minimal",color:C.sage,icon:"🌱"}:gad7<=9?{label:"Mild",color:C.sky,icon:"🌤️"}:gad7<=14?{label:"Moderate",color:C.amber,icon:"🌧️"}:{label:"Severe",color:C.rose,icon:"⛈️"};
@@ -1416,125 +1778,240 @@ function ResultScreen({data,history,onExercises,onFAQ,onLearn,onPDF,onRetake}){
   const chronicDuration=["chronic","longterm"].includes(duration?.duration);
   const functionalAvg=functional?Math.round(Object.values(functional).filter(v=>v!==null).reduce((a,b)=>a+b,0)/3):null;
   const nextStep=getActionableNextStep(phq9,gad7,duration,medical);
+  const hasAnyFlags=hasBipolarFlag||hasPTSD||hasPsychosis||poorSleep||highSomatic||functionalAvg>=6;
   const [showClinical,setShowClinical]=useState(false);
+  const [showFlags,setShowFlags]=useState(false);
+  const [showMeds,setShowMeds]=useState(false);
   const clinical=buildClinicalImpression(data);
+
+  // Staged reveal
+  const [revealPhase,setRevealPhase]=useState(0);
+  useEffect(()=>{
+    const timers=[
+      setTimeout(()=>setRevealPhase(1),250),
+      setTimeout(()=>setRevealPhase(2),700),
+      setTimeout(()=>setRevealPhase(3),1150),
+      setTimeout(()=>setRevealPhase(4),1600),
+    ];
+    return()=>timers.forEach(clearTimeout);
+  },[]);
+
+  // Warm summary title
+  const heroTitle = allGood ? "You're doing okay"
+    : isCrisis ? "We hear you — you're not alone"
+    : (phq9>=10&&gad7>=10) ? "There's a lot on your shoulders"
+    : phq9>=10 ? "Your heart is carrying something"
+    : gad7>=10 ? "Your mind has been busy"
+    : "Here's what we noticed";
+
+  const heroMessage = allGood ? "Your answers suggest low levels of depression and anxiety right now. Keep checking in."
+    : isCrisis ? "What you're going through matters. These results suggest you deserve real support — today, not later."
+    : "These results are a starting point, not a final label. Let's look at what they say together.";
+
+  const heroColor = isCrisis ? C.rose : allGood ? C.sage : C.peach;
 
   return(
     <div>
-      <Fade>
-        <div style={{textAlign:"center",marginBottom:22}}>
-          <div style={{fontSize:48,marginBottom:10}}>{allGood?"🌸":isCrisis?"💙":"🌿"}</div>
-          <Pill color={C.peach}>Your Summary</Pill>
-          <h2 style={{fontFamily:FD,fontSize:24,color:C.text,margin:"12px 0 8px"}}>{allGood?"You seem to be doing well":isCrisis?"Thank you for your honesty":"Here's your assessment"}</h2>
-          <p style={{color:C.textMid,fontSize:14,lineHeight:1.75}}>{allGood?"Your responses suggest low levels of depression and anxiety.":"These results are a starting point — not a final label."}</p>
-          {chronicDuration&&<div style={{marginTop:10,background:C.amberLight,border:`1px solid ${C.amber}44`,borderRadius:10,padding:"8px 14px",fontSize:13,color:C.amber,fontWeight:700}}>⏱️ {duration.duration==="chronic"?"3–12 months":"Over 1 year"} — chronic presentation</div>}
+      {/* ── HERO ── */}
+      <div style={{textAlign:"center",marginTop:12,marginBottom:26}}>
+        <div style={{
+          fontSize:72,marginBottom:10,
+          opacity:revealPhase>=1?1:0,
+          transform:revealPhase>=1?"scale(1)":"scale(0.4)",
+          transition:"all 0.7s cubic-bezier(0.34,1.56,0.64,1)",
+        }}>{allGood?"🌸":isCrisis?"💙":"🫂"}</div>
+        <div style={{
+          opacity:revealPhase>=1?1:0,
+          transform:revealPhase>=1?"translateY(0)":"translateY(12px)",
+          transition:"all 0.5s ease 0.15s",
+        }}>
+          <Pill color={heroColor}>Your check-in</Pill>
+          <h2 style={{fontFamily:FD,fontSize:28,color:C.text,margin:"14px 0 10px",lineHeight:1.3}}>{heroTitle}</h2>
+          <p style={{color:C.textMid,fontSize:15,lineHeight:1.75,maxWidth:340,margin:"0 auto"}}>{heroMessage}</p>
+          {chronicDuration&&<div style={{marginTop:14,background:C.amberLight,border:`1px solid ${C.amber}44`,borderRadius:10,padding:"7px 14px",fontSize:12,color:C.amber,fontWeight:700,display:"inline-block"}}>⏱️ {duration.duration==="chronic"?"3–12 months":"Over 1 year"} · chronic presentation</div>}
         </div>
-      </Fade>
+      </div>
 
+      {/* ── CRISIS BANNER (always first if crisis) ── */}
       {isCrisis&&(
-        <Fade delay={80}>
-          <div style={{background:C.roseLight,border:`2px solid ${C.rose}`,borderRadius:22,padding:"20px",marginBottom:16}}>
-            <p style={{color:C.rose,fontWeight:800,fontSize:15,marginBottom:6}}>💙 We noticed you're going through something really hard</p>
-            <p style={{color:C.textMid,fontSize:14,lineHeight:1.75,marginBottom:12}}>You matter, and help is right here. Please reach out today — you don't have to carry this alone.</p>
+        <div style={{
+          opacity:revealPhase>=1?1:0,
+          transform:revealPhase>=1?"translateY(0)":"translateY(14px)",
+          transition:"all 0.6s ease 0.3s",
+        }}>
+          <Card style={{marginBottom:16,background:C.roseLight,border:`2px solid ${C.rose}`}}>
+            <p style={{color:C.rose,fontWeight:800,fontSize:15,marginBottom:8}}>💙 Please reach out today</p>
+            <p style={{color:C.textMid,fontSize:14,lineHeight:1.75,marginBottom:12}}>You don't have to carry this alone. These lines are free, confidential, and will listen without judgement.</p>
             <div style={{color:C.text,fontSize:13,fontWeight:700,lineHeight:2.1}}>
               📞 <a href="tel:9152987821" style={{color:C.rose}}>iCall: 9152987821</a><br/>
-              📞 <a href="tel:18602662345" style={{color:C.rose}}>Vandrevala (24/7): 1860-2662-345</a><br/>
+              📞 <a href="tel:18602662345" style={{color:C.rose}}>Vandrevala 24/7: 1860-2662-345</a><br/>
               📞 <a href="tel:08046110007" style={{color:C.rose}}>NIMHANS: 080-46110007</a>
             </div>
-          </div>
-        </Fade>
-      )}
-
-      {/* Core scores */}
-      <Fade delay={160}>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14}}>
-          {[{label:"Depression",code:"PHQ-9",score:phq9,max:27,level:dep},{label:"Anxiety",code:"GAD-7",score:gad7,max:21,level:anx}].map(({label,code,score,max,level})=>(
-            <Card key={code} style={{textAlign:"center",background:level.color+"0e",border:`1.5px solid ${level.color}44`,padding:"16px 14px"}}>
-              <div style={{fontSize:24,marginBottom:2}}>{level.icon}</div>
-              <div style={{color:C.textSoft,fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:1}}>{label}</div>
-              <div style={{color:level.color,fontWeight:800,fontSize:18,margin:"2px 0"}}>{score}<span style={{fontSize:11,color:C.textMuted}}>/{max}</span></div>
-              <div style={{background:level.color+"22",color:level.color,fontSize:10,fontWeight:800,padding:"2px 7px",borderRadius:20,display:"inline-block"}}>{level.label}</div>
-            </Card>
-          ))}
+          </Card>
         </div>
-      </Fade>
-
-      {/* Trend chart if multiple assessments */}
-      {history&&history.length>=2 && <Fade delay={200}><ScoreTrendChart history={history}/></Fade>}
-
-      {/* Domain breakdown */}
-      <Fade delay={240}>
-        <DomainBreakdown answers={phq9answers} scale="PHQ-9"/>
-      </Fade>
-
-      {/* Normalisation */}
-      {!allGood && <Fade delay={280}><ComparisonCard phq9={phq9} gad7={gad7}/></Fade>}
-
-      {/* Actionable next step */}
-      <Fade delay={320}>
-        <Card style={{marginBottom:14,background:nextStep.urgency==="urgent"?C.roseLight:nextStep.urgency==="high"?C.peachLight:nextStep.urgency==="moderate"?C.amberLight:C.sageLight,border:`2px solid ${nextStep.urgency==="urgent"?C.rose:nextStep.urgency==="high"?C.peach:nextStep.urgency==="moderate"?C.amber:C.sage}`}}>
-          <div style={{color:C.textSoft,fontSize:11,fontWeight:800,textTransform:"uppercase",letterSpacing:1.2,marginBottom:8}}>🎯 Your one next step</div>
-          <p style={{color:C.text,fontWeight:800,fontSize:17,fontFamily:FD,lineHeight:1.45,marginBottom:8}}>{nextStep.action}</p>
-          <p style={{color:C.textMid,fontSize:13,lineHeight:1.65}}>{nextStep.why}</p>
-        </Card>
-      </Fade>
-
-      {/* Clinical flags */}
-      {(hasBipolarFlag||hasPTSD||hasPsychosis||poorSleep||highSomatic||functionalAvg>=6)&&(
-        <Fade delay={360}>
-          <Card style={{marginBottom:14}}>
-            <div style={{color:C.textSoft,fontSize:11,fontWeight:800,textTransform:"uppercase",letterSpacing:1.2,marginBottom:12}}>⚠️ Additional clinical flags</div>
-            {hasBipolarFlag&&<FlagRow icon="🌓" color={C.lavender} title="Possible bipolar spectrum" text="Your MDQ responses suggest possible bipolar spectrum symptoms. Please discuss specifically with your psychiatrist — this affects treatment choice."/>}
-            {hasPTSD&&<FlagRow icon="🌪️" color={C.rose} title="Possible PTSD" text="Your trauma screen suggests possible PTSD symptoms. Trauma-focused therapy (EMDR, Prolonged Exposure) is highly effective."/>}
-            {hasPsychosis&&<FlagRow icon="🧠" color={C.teal} title="Perceptual experiences noted" text="You reported some unusual perceptual experiences. These can have many causes. Please discuss with a psychiatrist."/>}
-            {poorSleep&&<FlagRow icon="😴" color={C.indigo} title="Poor sleep quality" text="Addressing sleep often significantly improves mood and anxiety."/>}
-            {highSomatic&&<FlagRow icon="🫄" color={C.amber} title="Significant physical symptoms" text="These may be related to your mental health. Very common in Indian presentations of depression."/>}
-            {functionalAvg>=6&&<FlagRow icon="💼" color={C.peach} title="Significant functional impairment" text={`Average impact: ${functionalAvg}/10. This level supports prioritising professional help.`}/>}
-          </Card>
-        </Fade>
       )}
 
-      {/* Treatment intensity tier */}
-      <Fade delay={340}>
-        <Card style={{marginBottom:14,background:clinical.tier.color+"10",border:`2px solid ${clinical.tier.color}66`}}>
-          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
-            <span style={{fontSize:22}}>{clinical.tier.icon}</span>
-            <div style={{color:C.textSoft,fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:1.2}}>Recommended care pathway</div>
+      {/* ── SCORES (two cards) ── */}
+      <div style={{
+        display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:16,
+        opacity:revealPhase>=2?1:0,
+        transform:revealPhase>=2?"translateY(0)":"translateY(14px)",
+        transition:"all 0.6s ease",
+      }}>
+        {[{label:"Mood",sub:"PHQ-9",score:phq9,max:27,level:dep},{label:"Worry",sub:"GAD-7",score:gad7,max:21,level:anx}].map(({label,sub,score,max,level})=>(
+          <div key={sub} style={{
+            background:`linear-gradient(135deg,${level.color}14 0%,${level.color}05 100%)`,
+            border:`1.5px solid ${level.color}44`,
+            borderRadius:20,padding:"18px 14px",textAlign:"center",
+          }}>
+            <div style={{fontSize:30,marginBottom:4}}>{level.icon}</div>
+            <div style={{color:C.textSoft,fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:1.2,marginBottom:3}}>{label} <span style={{opacity:0.6,fontWeight:700}}>· {sub}</span></div>
+            <div style={{color:level.color,fontWeight:800,fontSize:26,fontFamily:FD,lineHeight:1}}>{score}<span style={{fontSize:13,color:C.textMuted,fontFamily:FB}}>/{max}</span></div>
+            <div style={{background:level.color+"22",color:level.color,fontSize:11,fontWeight:800,padding:"3px 10px",borderRadius:20,display:"inline-block",marginTop:8}}>{level.label}</div>
           </div>
-          <p style={{color:clinical.tier.color,fontWeight:800,fontSize:17,fontFamily:FD,marginBottom:10}}>Tier {clinical.tier.level} · {clinical.tier.label}</p>
-          <div style={{fontSize:13,color:C.textMid,lineHeight:1.7}}>
-            <div style={{marginBottom:4}}><strong>What:</strong> {clinical.tierDetail.action}</div>
-            <div style={{marginBottom:4}}><strong>Where:</strong> {clinical.tierDetail.path}</div>
-            <div><strong>Typical approach:</strong> {clinical.tierDetail.modality}</div>
-          </div>
-        </Card>
-      </Fade>
+        ))}
+      </div>
 
-      {/* Medication flags */}
-      {clinical.medFlags.length>0 && (
-        <Fade delay={370}>
-          <Card style={{marginBottom:14,background:C.tealLight,border:`2px solid ${C.teal}55`}}>
-            <div style={{color:C.teal,fontSize:13,fontWeight:800,marginBottom:10}}>💊 Medication interaction notes</div>
-            <p style={{color:C.textMid,fontSize:12,lineHeight:1.65,marginBottom:10,fontStyle:"italic"}}>Some of your medications can affect mood. Share these with your doctor — <strong>do not stop any medication without medical advice.</strong></p>
-            {clinical.medFlags.map((m,i)=>(
-              <div key={i} style={{padding:"10px 0",borderBottom:i<clinical.medFlags.length-1?`1px solid ${C.border}`:"none"}}>
-                <div style={{fontWeight:800,fontSize:13,color:m.severity==="high"?C.rose:C.amber,marginBottom:3}}>
-                  {m.severity==="high"?"⚠️":"💛"} {m.label}
-                </div>
-                {m.note && <div style={{color:C.textMid,fontSize:12,lineHeight:1.55}}>{m.note}</div>}
+      {/* ── HERO CTA: the "what now" moment ── */}
+      <div style={{
+        opacity:revealPhase>=3?1:0,
+        transform:revealPhase>=3?"translateY(0)":"translateY(14px)",
+        transition:"all 0.6s ease",
+        marginBottom:14,
+      }}>
+        <div style={{
+          background:`linear-gradient(135deg,${clinical.tier.color} 0%,${clinical.tier.color}dd 100%)`,
+          borderRadius:24,
+          padding:"22px 22px 20px",
+          color:C.white,
+          boxShadow:`0 10px 30px ${clinical.tier.color}55`,
+          position:"relative",overflow:"hidden",
+        }}>
+          <div style={{position:"absolute",top:-40,right:-40,width:150,height:150,borderRadius:"50%",background:"rgba(255,255,255,0.1)"}}/>
+          <div style={{position:"absolute",bottom:-20,left:-20,width:80,height:80,borderRadius:"50%",background:"rgba(255,255,255,0.08)"}}/>
+          <div style={{position:"relative"}}>
+            <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
+              <div style={{width:44,height:44,borderRadius:14,background:"rgba(255,255,255,0.25)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,backdropFilter:"blur(4px)"}}>{clinical.tier.icon}</div>
+              <div>
+                <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:1.2,opacity:0.92}}>Your one next step</div>
+                <div style={{fontSize:12,opacity:0.85,fontWeight:700}}>Tier {clinical.tier.level} · {clinical.tier.label}</div>
               </div>
-            ))}
-          </Card>
-        </Fade>
+            </div>
+            <p style={{fontFamily:FD,fontSize:19,fontWeight:600,lineHeight:1.45,marginBottom:10}}>{nextStep.action}</p>
+            <p style={{fontSize:13,lineHeight:1.7,opacity:0.92,marginBottom:14}}>{nextStep.why}</p>
+            <div style={{display:"flex",flexDirection:"column",gap:7,background:"rgba(255,255,255,0.15)",borderRadius:14,padding:"12px 14px",backdropFilter:"blur(4px)"}}>
+              <div style={{fontSize:11,fontWeight:800,textTransform:"uppercase",letterSpacing:1,opacity:0.92}}>Typically this looks like</div>
+              <div style={{fontSize:13,lineHeight:1.6}}><strong>Where:</strong> {clinical.tierDetail.path}</div>
+              <div style={{fontSize:13,lineHeight:1.6}}><strong>How:</strong> {clinical.tierDetail.modality}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Trend chart if multiple ── */}
+      {history&&history.length>=2 && (
+        <div style={{
+          opacity:revealPhase>=4?1:0,
+          transform:revealPhase>=4?"translateY(0)":"translateY(14px)",
+          transition:"all 0.5s ease",
+        }}>
+          <ScoreTrendChart history={history}/>
+        </div>
       )}
 
-      {/* Clinical impression toggle (for doctor or curious patient) */}
-      <Fade delay={400}>
-        <button onClick={()=>setShowClinical(s=>!s)} style={{width:"100%",padding:"14px 18px",background:C.indigoLight,border:`1.5px solid ${C.indigo}44`,borderRadius:16,cursor:"pointer",fontFamily:FB,display:"flex",alignItems:"center",gap:10,marginBottom:showClinical?10:14}}>
-          <span style={{fontSize:20}}>🩺</span>
+      {/* ── Normalisation ── */}
+      {!allGood && (
+        <div style={{
+          opacity:revealPhase>=4?1:0,
+          transform:revealPhase>=4?"translateY(0)":"translateY(14px)",
+          transition:"all 0.5s ease 0.1s",
+        }}>
+          <ComparisonCard phq9={phq9} gad7={gad7}/>
+        </div>
+      )}
+
+      {/* ── Expandable: clinical flags ── */}
+      {hasAnyFlags && (
+        <div style={{
+          opacity:revealPhase>=4?1:0,
+          transform:revealPhase>=4?"translateY(0)":"translateY(14px)",
+          transition:"all 0.5s ease 0.15s",
+        }}>
+          <button onClick={()=>{tapHaptic("light");setShowFlags(s=>!s);}} style={{
+            width:"100%",padding:"14px 18px",background:C.amberLight,
+            border:`1.5px solid ${C.amber}55`,borderRadius:16,
+            cursor:"pointer",fontFamily:FB,display:"flex",alignItems:"center",gap:10,marginBottom:showFlags?10:14,
+          }}>
+            <span style={{fontSize:22}}>⚠️</span>
+            <div style={{flex:1,textAlign:"left"}}>
+              <div style={{color:C.amber,fontWeight:800,fontSize:13}}>Additional clinical flags</div>
+              <div style={{color:C.textSoft,fontSize:11}}>Things your doctor should know · tap to {showFlags?"hide":"view"}</div>
+            </div>
+            <span style={{color:C.amber,fontSize:18,transform:showFlags?"rotate(90deg)":"rotate(0)",transition:"transform 0.2s"}}>›</span>
+          </button>
+          {showFlags && (
+            <Card style={{marginBottom:14}}>
+              {hasBipolarFlag&&<FlagRow icon="🌓" color={C.lavender} title="Possible bipolar spectrum" text="Your MDQ responses suggest possible bipolar spectrum symptoms. Please discuss with your psychiatrist — this affects treatment choice."/>}
+              {hasPTSD&&<FlagRow icon="🌪️" color={C.rose} title="Possible PTSD" text="Your trauma screen suggests possible PTSD symptoms. Trauma-focused therapy (EMDR, Prolonged Exposure) is highly effective."/>}
+              {hasPsychosis&&<FlagRow icon="🧠" color={C.teal} title="Perceptual experiences noted" text="You reported some unusual perceptual experiences. These can have many causes. Please discuss with a psychiatrist."/>}
+              {poorSleep&&<FlagRow icon="😴" color={C.indigo} title="Poor sleep quality" text="Addressing sleep often significantly improves mood and anxiety."/>}
+              {highSomatic&&<FlagRow icon="🫄" color={C.amber} title="Significant physical symptoms" text="These may be related to your mental health. Very common in Indian presentations of depression."/>}
+              {functionalAvg>=6&&<FlagRow icon="💼" color={C.peach} title="Significant functional impairment" text={`Average impact: ${functionalAvg}/10. This level supports prioritising professional help.`}/>}
+            </Card>
+          )}
+        </div>
+      )}
+
+      {/* ── Expandable: medication flags ── */}
+      {clinical.medFlags.length>0 && (
+        <div style={{
+          opacity:revealPhase>=4?1:0,
+          transform:revealPhase>=4?"translateY(0)":"translateY(14px)",
+          transition:"all 0.5s ease 0.2s",
+        }}>
+          <button onClick={()=>{tapHaptic("light");setShowMeds(s=>!s);}} style={{
+            width:"100%",padding:"14px 18px",background:C.tealLight,
+            border:`1.5px solid ${C.teal}55`,borderRadius:16,
+            cursor:"pointer",fontFamily:FB,display:"flex",alignItems:"center",gap:10,marginBottom:showMeds?10:14,
+          }}>
+            <span style={{fontSize:22}}>💊</span>
+            <div style={{flex:1,textAlign:"left"}}>
+              <div style={{color:C.teal,fontWeight:800,fontSize:13}}>Medication interactions ({clinical.medFlags.length})</div>
+              <div style={{color:C.textSoft,fontSize:11}}>Some of your meds may affect mood · tap to {showMeds?"hide":"view"}</div>
+            </div>
+            <span style={{color:C.teal,fontSize:18,transform:showMeds?"rotate(90deg)":"rotate(0)",transition:"transform 0.2s"}}>›</span>
+          </button>
+          {showMeds && (
+            <Card style={{marginBottom:14,background:C.tealLight,border:`1.5px solid ${C.teal}55`}}>
+              <p style={{color:C.textMid,fontSize:12,lineHeight:1.65,marginBottom:10,fontStyle:"italic"}}>Share these with your doctor — <strong>do not stop any medication without medical advice.</strong></p>
+              {clinical.medFlags.map((m,i)=>(
+                <div key={i} style={{padding:"10px 0",borderBottom:i<clinical.medFlags.length-1?`1px solid ${C.border}`:"none"}}>
+                  <div style={{fontWeight:800,fontSize:13,color:m.severity==="high"?C.rose:C.amber,marginBottom:3}}>
+                    {m.severity==="high"?"⚠️":"💛"} {m.label}
+                  </div>
+                  {m.note && <div style={{color:C.textMid,fontSize:12,lineHeight:1.55}}>{m.note}</div>}
+                </div>
+              ))}
+            </Card>
+          )}
+        </div>
+      )}
+
+      {/* ── Expandable: clinical impression (ICD/DSM/diffs) ── */}
+      <div style={{
+        opacity:revealPhase>=4?1:0,
+        transform:revealPhase>=4?"translateY(0)":"translateY(14px)",
+        transition:"all 0.5s ease 0.25s",
+      }}>
+        <button onClick={()=>{tapHaptic("light");setShowClinical(s=>!s);}} style={{
+          width:"100%",padding:"14px 18px",background:C.indigoLight,
+          border:`1.5px solid ${C.indigo}44`,borderRadius:16,
+          cursor:"pointer",fontFamily:FB,display:"flex",alignItems:"center",gap:10,marginBottom:showClinical?10:14,
+        }}>
+          <span style={{fontSize:22}}>🩺</span>
           <div style={{flex:1,textAlign:"left"}}>
             <div style={{color:C.indigo,fontWeight:800,fontSize:13}}>Clinical impression (for your doctor)</div>
-            <div style={{color:C.textSoft,fontSize:11}}>ICD-11, DSM-5, differentials — tap to {showClinical?"hide":"view"}</div>
+            <div style={{color:C.textSoft,fontSize:11}}>ICD-11, DSM-5, differentials · tap to {showClinical?"hide":"view"}</div>
           </div>
           <span style={{color:C.indigo,fontSize:18,transform:showClinical?"rotate(90deg)":"rotate(0)",transition:"transform 0.2s"}}>›</span>
         </button>
@@ -1566,35 +2043,60 @@ function ResultScreen({data,history,onExercises,onFAQ,onLearn,onPDF,onRetake}){
             </div>
           </Card>
         )}
-      </Fade>
+      </div>
 
-      <Fade delay={440}>
-        <div style={{background:C.amberLight,border:`1px solid ${C.amber}33`,borderRadius:14,padding:"12px 14px",marginBottom:18}}>
-          <p style={{color:C.textMid,fontSize:12,lineHeight:1.65}}>⚠️ <strong>Reminder:</strong> This is a screening aid, not a clinical diagnosis. Always discuss results with a qualified professional.</p>
+      {/* ── Domain breakdown ── */}
+      {phq9answers && phq9answers.length>0 && (
+        <div style={{
+          opacity:revealPhase>=4?1:0,
+          transform:revealPhase>=4?"translateY(0)":"translateY(14px)",
+          transition:"all 0.5s ease 0.3s",
+        }}>
+          <DomainBreakdown answers={phq9answers} scale="PHQ-9"/>
         </div>
-      </Fade>
+      )}
 
-      <Fade delay={440}>
+      {/* ── Things you can do now ── */}
+      <div style={{
+        opacity:revealPhase>=4?1:0,
+        transform:revealPhase>=4?"translateY(0)":"translateY(14px)",
+        transition:"all 0.5s ease 0.35s",
+      }}>
+        <div style={{color:C.textSoft,fontSize:11,fontWeight:800,textTransform:"uppercase",letterSpacing:1.2,marginTop:18,marginBottom:10}}>Things you can do right now</div>
         <div style={{display:"flex",flexDirection:"column",gap:10}}>
-          <button onClick={onPDF} style={{width:"100%",padding:"18px 20px",borderRadius:20,border:`2px solid ${C.indigo}`,background:`linear-gradient(135deg,${C.indigoLight} 0%,#eff1fc 100%)`,cursor:"pointer",textAlign:"left",fontFamily:FB,display:"flex",alignItems:"center",gap:14}}>
-            <div style={{width:46,height:46,borderRadius:14,background:C.indigo,display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,flexShrink:0}}>📄</div>
-            <div style={{flex:1}}><div style={{color:C.indigo,fontWeight:800,fontSize:15,marginBottom:1}}>Download / share clinical report</div><div style={{color:C.textMid,fontSize:12}}>Send to your doctor before your visit</div></div>
-            <span style={{color:C.indigo,fontSize:22}}>›</span>
+          <button onClick={onPDF} style={{width:"100%",padding:"16px 18px",borderRadius:18,border:`2px solid ${C.indigo}55`,background:`linear-gradient(135deg,${C.indigoLight} 0%,#eff1fc 100%)`,cursor:"pointer",textAlign:"left",fontFamily:FB,display:"flex",alignItems:"center",gap:12}}>
+            <div style={{width:44,height:44,borderRadius:13,background:C.indigo,display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,flexShrink:0}}>📄</div>
+            <div style={{flex:1}}><div style={{color:C.indigo,fontWeight:800,fontSize:14,marginBottom:1}}>Download your report</div><div style={{color:C.textMid,fontSize:11}}>Share with your doctor before the visit</div></div>
+            <span style={{color:C.indigo,fontSize:20}}>›</span>
           </button>
-          <button onClick={onExercises} style={{width:"100%",padding:"18px 20px",borderRadius:20,border:`2px solid ${C.sage}`,background:`linear-gradient(135deg,${C.sageLight} 0%,#f0faf4 100%)`,cursor:"pointer",textAlign:"left",fontFamily:FB,display:"flex",alignItems:"center",gap:14}}>
-            <div style={{width:46,height:46,borderRadius:14,background:C.sage,display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,flexShrink:0}}>🌿</div>
-            <div style={{flex:1}}><div style={{color:C.sage,fontWeight:800,fontSize:15,marginBottom:1}}>Try a calming exercise</div><div style={{color:C.textMid,fontSize:12}}>Breathing, grounding & more</div></div>
-            <span style={{color:C.sage,fontSize:22}}>›</span>
+          <button onClick={()=>onExercises()} style={{width:"100%",padding:"16px 18px",borderRadius:18,border:`2px solid ${C.sage}55`,background:`linear-gradient(135deg,${C.sageLight} 0%,#f0faf4 100%)`,cursor:"pointer",textAlign:"left",fontFamily:FB,display:"flex",alignItems:"center",gap:12}}>
+            <div style={{width:44,height:44,borderRadius:13,background:C.sage,display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,flexShrink:0}}>🌿</div>
+            <div style={{flex:1}}><div style={{color:C.sage,fontWeight:800,fontSize:14,marginBottom:1}}>Try a calming exercise</div><div style={{color:C.textMid,fontSize:11}}>Breathing, grounding & more — right now</div></div>
+            <span style={{color:C.sage,fontSize:20}}>›</span>
           </button>
-          <button onClick={onFAQ} style={{width:"100%",padding:"18px 20px",borderRadius:20,border:`2px solid ${C.sky}`,background:`linear-gradient(135deg,${C.skyLight} 0%,#f0f6ff 100%)`,cursor:"pointer",textAlign:"left",fontFamily:FB,display:"flex",alignItems:"center",gap:14}}>
-            <div style={{width:46,height:46,borderRadius:14,background:C.sky,display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,flexShrink:0}}>💬</div>
-            <div style={{flex:1}}><div style={{color:C.sky,fontWeight:800,fontSize:15,marginBottom:1}}>Common questions</div><div style={{color:C.textMid,fontSize:12}}>Personalised to your results</div></div>
-            <span style={{color:C.sky,fontSize:22}}>›</span>
+          {onJournal && (
+            <button onClick={onJournal} style={{width:"100%",padding:"16px 18px",borderRadius:18,border:`2px solid ${C.lavender}55`,background:`linear-gradient(135deg,${C.lavenderLight} 0%,#f6f2fc 100%)`,cursor:"pointer",textAlign:"left",fontFamily:FB,display:"flex",alignItems:"center",gap:12}}>
+              <div style={{width:44,height:44,borderRadius:13,background:C.lavender,display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,flexShrink:0}}>📖</div>
+              <div style={{flex:1}}><div style={{color:C.lavender,fontWeight:800,fontSize:14,marginBottom:1}}>Write it out</div><div style={{color:C.textMid,fontSize:11}}>Gentle journaling prompts · private to you</div></div>
+              <span style={{color:C.lavender,fontSize:20}}>›</span>
+            </button>
+          )}
+          <button onClick={onFAQ} style={{width:"100%",padding:"16px 18px",borderRadius:18,border:`2px solid ${C.sky}55`,background:`linear-gradient(135deg,${C.skyLight} 0%,#f0f6ff 100%)`,cursor:"pointer",textAlign:"left",fontFamily:FB,display:"flex",alignItems:"center",gap:12}}>
+            <div style={{width:44,height:44,borderRadius:13,background:C.sky,display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,flexShrink:0}}>💬</div>
+            <div style={{flex:1}}><div style={{color:C.sky,fontWeight:800,fontSize:14,marginBottom:1}}>Common questions</div><div style={{color:C.textMid,fontSize:11}}>Personalised to your results</div></div>
+            <span style={{color:C.sky,fontSize:20}}>›</span>
           </button>
+        </div>
+
+        <div style={{display:"flex",flexDirection:"column",gap:8,marginTop:16}}>
           <WarmButton onClick={onLearn} variant="secondary">📚 Learn about mental health</WarmButton>
           <WarmButton onClick={onRetake} variant="ghost">↩ Start over (saves current as history)</WarmButton>
         </div>
-      </Fade>
+
+        <div style={{background:C.amberLight,border:`1px solid ${C.amber}33`,borderRadius:12,padding:"10px 14px",marginTop:18}}>
+          <p style={{color:C.textMid,fontSize:11,lineHeight:1.65}}>⚠️ <strong>Reminder:</strong> This is a screening aid, not a clinical diagnosis. Always discuss results with a qualified professional.</p>
+        </div>
+      </div>
     </div>
   );
 }
@@ -2413,7 +2915,7 @@ function MoodCalendar({log,days=14}){
 }
 
 /* ─── Returning-user dashboard (Feature 1) ──────────────────────── */
-function ReturningDashboard({history,moodLog,onMoodCheck,onQuick,onFull,onExercises,onPrivacy,onRefs,onResultsView}){
+function ReturningDashboard({history,moodLog,onMoodCheck,onQuick,onFull,onExercises,onJournal,onPrivacy,onRefs,onResultsView}){
   const hour=new Date().getHours();
   const greeting=hour<5?"Hello, night owl":hour<12?"Good morning":hour<17?"Good afternoon":hour<21?"Good evening":"Hello, night owl";
   const lastAssessment=history?.[history.length-1];
@@ -2530,6 +3032,24 @@ function ReturningDashboard({history,moodLog,onMoodCheck,onQuick,onFull,onExerci
             <div style={{fontSize:28,marginBottom:6}}>🌿</div>
             <div style={{color:C.sage,fontWeight:800,fontSize:13}}>Calm down</div>
             <div style={{color:C.textSoft,fontSize:10,marginTop:2}}>Breathing & more</div>
+          </button>
+          <button onClick={onJournal} style={{
+            padding:"18px 14px",borderRadius:18,
+            border:`2px solid ${C.lavender}55`,background:C.lavenderLight,
+            cursor:"pointer",textAlign:"center",fontFamily:FB,
+          }}>
+            <div style={{fontSize:28,marginBottom:6}}>📖</div>
+            <div style={{color:C.lavender,fontWeight:800,fontSize:13}}>Journal</div>
+            <div style={{color:C.textSoft,fontSize:10,marginTop:2}}>Gentle prompts</div>
+          </button>
+          <button onClick={onMoodCheck} style={{
+            padding:"18px 14px",borderRadius:18,
+            border:`2px solid ${C.peach}55`,background:C.peachLight,
+            cursor:"pointer",textAlign:"center",fontFamily:FB,
+          }}>
+            <div style={{fontSize:28,marginBottom:6}}>💭</div>
+            <div style={{color:C.peach,fontWeight:800,fontSize:13}}>Mood log</div>
+            <div style={{color:C.textSoft,fontSize:10,marginTop:2}}>10-second check-in</div>
           </button>
         </div>
         <button onClick={onFull} style={{
@@ -2769,6 +3289,7 @@ const STEP={
   SLEEP:"sleep", PSYCHOSIS:"psychosis", FUNCTIONAL:"functional",
   WINDDOWN:"winddown",
   RESULT:"result", EXERCISES:"exercises", FAQ:"faq", LEARN:"learn",
+  JOURNAL:"journal",
   PRIVACY:"privacy", REFS:"refs", PDF:"pdf",
 };
 const SAVEABLE_STEPS=[STEP.WHO,STEP.PROFILE,STEP.MEDICAL,STEP.MEDS,STEP.DURATION,STEP.PHQ9,STEP.BRIDGE,STEP.GAD7,STEP.TW_PHQ15,STEP.PHQ15,STEP.TW_MDQ,STEP.MDQ,STEP.TW_TRAUMA,STEP.TRAUMA,STEP.SLEEP,STEP.PSYCHOSIS,STEP.FUNCTIONAL];
@@ -2978,7 +3499,8 @@ export default function App(){
                 onMoodCheck={()=>setStep(STEP.MOOD)}
                 onQuick={()=>setStep(STEP.QUICK)}
                 onFull={()=>setStep(STEP.WHO)}
-                onExercises={()=>setStep(STEP.EXERCISES)}
+                onExercises={()=>{setData(d=>({...d,_exerciseReturn:"dashboard",_exerciseFeeling:null}));setStep(STEP.EXERCISES);}}
+                onJournal={()=>{setData(d=>({...d,_journalReturn:"dashboard"}));setStep(STEP.JOURNAL);}}
                 onResultsView={()=>setStep(STEP.RESULT)}
                 onPrivacy={()=>setStep(STEP.PRIVACY)}
                 onRefs={()=>setStep(STEP.REFS)}/>
@@ -3035,8 +3557,9 @@ export default function App(){
 
           {step===STEP.WINDDOWN && <WindDown onContinue={()=>setStep(STEP.RESULT)}/>}
 
-          {step===STEP.RESULT && <ResultScreen data={data} history={history} onExercises={()=>setStep(STEP.EXERCISES)} onFAQ={()=>setStep(STEP.FAQ)} onLearn={()=>setStep(STEP.LEARN)} onPDF={()=>setStep(STEP.PDF)} onRetake={reset}/>}
-          {step===STEP.EXERCISES && <ExercisesScreen onDone={()=>setStep(STEP.RESULT)}/>}
+          {step===STEP.RESULT && <ResultScreen data={data} history={history} onExercises={(f)=>{setData(d=>({...d,_exerciseFeeling:f||null}));setStep(STEP.EXERCISES);}} onFAQ={()=>setStep(STEP.FAQ)} onLearn={()=>setStep(STEP.LEARN)} onPDF={()=>setStep(STEP.PDF)} onJournal={()=>{setData(d=>({...d,_journalReturn:"result"}));setStep(STEP.JOURNAL);}} onRetake={reset}/>}
+          {step===STEP.EXERCISES && <ExercisesScreen onDone={()=>setStep(data._exerciseReturn==="dashboard"?STEP.WELCOME:STEP.RESULT)} initialFeeling={data._exerciseFeeling||null}/>}
+          {step===STEP.JOURNAL && <JournalScreen onBack={()=>setStep(data._journalReturn==="dashboard"?STEP.WELCOME:STEP.RESULT)} onDone={()=>setStep(data._journalReturn==="dashboard"?STEP.WELCOME:STEP.RESULT)}/>}
           {step===STEP.FAQ && <FAQScreen phq9={data.phq9||0} gad7={data.gad7||0} onBack={()=>setStep(STEP.RESULT)}/>}
           {step===STEP.LEARN && <LearnScreen onBack={()=>setStep(STEP.RESULT)}/>}
           {step===STEP.PRIVACY && <PrivacyScreen onBack={()=>setStep(STEP.WELCOME)}/>}
