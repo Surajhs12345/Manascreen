@@ -118,6 +118,100 @@ const FREQ4 = [
   {label:"More than half the days",sub:"Quite often",value:2,color:C.amber},
   {label:"Nearly every day",sub:"Almost always",value:3,color:C.peach},
 ];
+
+/* ─── PHQ-A (PHQ-9 Modified for Adolescents, Stage 3 / Feature 12) ── */
+// Johnson, Harris, Spitzer & Williams 2002 — validated ages 11–17
+// Same scoring as PHQ-9 (0-3 per item, total 0-27) with teen-friendly wording
+const PHQA = [
+  {q:"Feeling down, depressed, irritable, or hopeless?",emoji:"🌧️",domain:"mood"},
+  {q:"Little interest or pleasure in doing things you usually enjoy?",emoji:"😔",domain:"interest"},
+  {q:"Trouble falling asleep, staying asleep, or sleeping too much?",emoji:"😴",domain:"sleep"},
+  {q:"Poor appetite, weight loss, or overeating?",emoji:"🍽️",domain:"appetite"},
+  {q:"Feeling tired, or having little energy?",emoji:"🪫",domain:"energy"},
+  {q:"Feeling bad about yourself — or feeling that you're a failure, or that you've let yourself or your family down?",emoji:"💔",domain:"selfworth"},
+  {q:"Trouble concentrating on things like school work, reading, or watching TV?",emoji:"🌀",domain:"concentration"},
+  {q:"Moving or speaking so slowly that other people could have noticed? Or being so fidgety or restless that you were moving around a lot more than usual?",emoji:"🐢",domain:"psychomotor"},
+  {q:"Thoughts that you would be better off dead, or of hurting yourself in some way?",emoji:"⚠️",domain:"safety",sensitive:true},
+];
+
+/* ─── EPDS (Edinburgh Postnatal Depression Scale, Feature 13) ─────── */
+// Cox, Holden & Sagovsky 1987 — for women in pregnancy or up to 12 months postpartum
+// 10 items, each scored 0-3, total 0-30; score ≥13 = probable major depression
+// Item 10 is a suicidality item and requires follow-up if endorsed
+// Each item has custom response options in original order
+const EPDS = [
+  {q:"I have been able to laugh and see the funny side of things",emoji:"😊",
+    options:[
+      {label:"As much as I always could",value:0},
+      {label:"Not quite so much now",value:1},
+      {label:"Definitely not so much now",value:2},
+      {label:"Not at all",value:3},
+    ]},
+  {q:"I have looked forward with enjoyment to things",emoji:"🌸",
+    options:[
+      {label:"As much as I ever did",value:0},
+      {label:"Rather less than I used to",value:1},
+      {label:"Definitely less than I used to",value:2},
+      {label:"Hardly at all",value:3},
+    ]},
+  {q:"I have blamed myself unnecessarily when things went wrong",emoji:"💭",reverse:true,
+    options:[
+      {label:"Yes, most of the time",value:3},
+      {label:"Yes, some of the time",value:2},
+      {label:"Not very often",value:1},
+      {label:"No, never",value:0},
+    ]},
+  {q:"I have been anxious or worried for no good reason",emoji:"🌪️",reverse:true,
+    options:[
+      {label:"No, not at all",value:0},
+      {label:"Hardly ever",value:1},
+      {label:"Yes, sometimes",value:2},
+      {label:"Yes, very often",value:3},
+    ]},
+  {q:"I have felt scared or panicky for no very good reason",emoji:"😨",reverse:true,
+    options:[
+      {label:"Yes, quite a lot",value:3},
+      {label:"Yes, sometimes",value:2},
+      {label:"No, not much",value:1},
+      {label:"No, not at all",value:0},
+    ]},
+  {q:"Things have been getting on top of me",emoji:"🫨",reverse:true,
+    options:[
+      {label:"Yes, most of the time I haven't been able to cope at all",value:3},
+      {label:"Yes, sometimes I haven't been coping as well as usual",value:2},
+      {label:"No, most of the time I have coped quite well",value:1},
+      {label:"No, I have been coping as well as ever",value:0},
+    ]},
+  {q:"I have been so unhappy that I have had difficulty sleeping",emoji:"😴",reverse:true,
+    options:[
+      {label:"Yes, most of the time",value:3},
+      {label:"Yes, sometimes",value:2},
+      {label:"Not very often",value:1},
+      {label:"No, not at all",value:0},
+    ]},
+  {q:"I have felt sad or miserable",emoji:"🌧️",reverse:true,
+    options:[
+      {label:"Yes, most of the time",value:3},
+      {label:"Yes, quite often",value:2},
+      {label:"Not very often",value:1},
+      {label:"No, not at all",value:0},
+    ]},
+  {q:"I have been so unhappy that I have been crying",emoji:"💧",reverse:true,
+    options:[
+      {label:"Yes, most of the time",value:3},
+      {label:"Yes, quite often",value:2},
+      {label:"Only occasionally",value:1},
+      {label:"No, never",value:0},
+    ]},
+  {q:"The thought of harming myself has occurred to me",emoji:"⚠️",sensitive:true,reverse:true,
+    options:[
+      {label:"Yes, quite often",value:3},
+      {label:"Sometimes",value:2},
+      {label:"Hardly ever",value:1},
+      {label:"Never",value:0},
+    ]},
+];
+
 const FREQ3 = [
   {label:"Not bothered at all",value:0,color:C.sage},
   {label:"Bothered a little",value:1,color:C.amber},
@@ -1169,7 +1263,9 @@ function PrivacyScreen({onBack}){
 function ReferencesScreen({onBack}){
   const refs=[
     {name:"PHQ-9",full:"Patient Health Questionnaire-9",cite:"Kroenke K, Spitzer RL, Williams JB. The PHQ-9: validity of a brief depression severity measure. J Gen Intern Med. 2001;16(9):606-13.",use:"Depression severity screening. Validated across cultures including India."},
+    {name:"PHQ-A",full:"Patient Health Questionnaire Modified for Adolescents",cite:"Johnson JG, Harris ES, Spitzer RL, Williams JB. The Patient Health Questionnaire for Adolescents: validation of an instrument for the assessment of mental disorders among adolescent primary care patients. J Adolesc Health. 2002;30(3):196-204.",use:"Depression screening validated for ages 11-17. Same scoring as PHQ-9 with age-appropriate wording."},
     {name:"GAD-7",full:"Generalized Anxiety Disorder 7-item scale",cite:"Spitzer RL, Kroenke K, Williams JB, Löwe B. A brief measure for assessing generalized anxiety disorder: the GAD-7. Arch Intern Med. 2006;166(10):1092-7.",use:"Anxiety severity screening. Used worldwide in primary care."},
+    {name:"EPDS",full:"Edinburgh Postnatal Depression Scale",cite:"Cox JL, Holden JM, Sagovsky R. Detection of postnatal depression: development of the 10-item Edinburgh Postnatal Depression Scale. Br J Psychiatry. 1987;150:782-6.",use:"Perinatal depression screening — validated during pregnancy and up to 12 months postpartum. Cut-off ≥13 suggests probable major depression."},
     {name:"PHQ-15",full:"Patient Health Questionnaire-15",cite:"Kroenke K, Spitzer RL, Williams JB. The PHQ-15: validity of a new measure for evaluating the severity of somatic symptoms. Psychosom Med. 2002;64(2):258-66.",use:"Somatic symptom screen — particularly relevant for Indian presentations where depression often manifests physically."},
     {name:"MDQ",full:"Mood Disorder Questionnaire",cite:"Hirschfeld RM, et al. Development and validation of a screening instrument for bipolar spectrum disorder: the Mood Disorder Questionnaire. Am J Psychiatry. 2000;157(11):1873-5.",use:"Bipolar spectrum screening. Positive if ≥7 items + clustered + ≥moderate impact."},
     {name:"PC-PTSD-5",full:"Primary Care PTSD Screen for DSM-5",cite:"Prins A, Bovin MJ, Smolenski DJ, et al. The Primary Care PTSD Screen for DSM-5 (PC-PTSD-5). J Gen Intern Med. 2016;31(10):1206-11.",use:"Trauma and PTSD screening in primary care."},
@@ -3091,6 +3187,487 @@ function ReturningDashboard({history,moodLog,onMoodCheck,onQuick,onFull,onExerci
   );
 }
 
+/* ─── Adolescent pathway (Feature 12) ────────────────────────────── */
+function TeenIntroScreen({onContinue,onBack}){
+  return(
+    <div>
+      <BackBar onBack={onBack}/>
+      <Fade>
+        <div style={{textAlign:"center",marginTop:14,marginBottom:24}}>
+          <div style={{fontSize:64,marginBottom:12}}>🌱</div>
+          <Pill color={C.sky}>For teens</Pill>
+          <h2 style={{fontFamily:FD,fontSize:26,color:C.text,margin:"14px 0 10px",lineHeight:1.3}}>This is just for you</h2>
+          <p style={{color:C.textMid,fontSize:15,lineHeight:1.75,maxWidth:340,margin:"0 auto"}}>A private space to check in with yourself. Nothing is shared, nothing is saved outside your phone.</p>
+        </div>
+      </Fade>
+      <Fade delay={150}>
+        <Card style={{marginBottom:14,background:`linear-gradient(135deg,${C.skyLight} 0%,#f0f6ff 100%)`,border:`1.5px solid ${C.sky}44`}}>
+          <div style={{display:"flex",gap:12,alignItems:"flex-start",marginBottom:10}}>
+            <span style={{fontSize:22,flexShrink:0}}>🤝</span>
+            <div>
+              <p style={{color:C.sky,fontWeight:800,fontSize:13,marginBottom:6}}>We want you to know</p>
+              <p style={{color:C.textMid,fontSize:13,lineHeight:1.7,marginBottom:8}}>A lot of teens feel things they can't explain. It's normal, and it's okay to ask for help. Many things get better when we talk about them.</p>
+              <p style={{color:C.textMid,fontSize:13,lineHeight:1.7}}>If anything you share here worries us, we'll suggest talking to a trusted adult — a parent, teacher, school counsellor, older cousin, or a helpline. You don't have to deal with it alone.</p>
+            </div>
+          </div>
+        </Card>
+      </Fade>
+      <Fade delay={250}>
+        <Card style={{marginBottom:16,background:C.sageLight,border:`1.5px solid ${C.sage}44`}}>
+          <p style={{color:C.sage,fontWeight:800,fontSize:13,marginBottom:4}}>🔒 Your privacy</p>
+          <p style={{color:C.textMid,fontSize:13,lineHeight:1.7}}>Your answers stay only on this phone. We don't show them to your parents, school, or anyone. Nothing is sent anywhere.</p>
+        </Card>
+      </Fade>
+      <Fade delay={350}>
+        <WarmButton onClick={onContinue} variant="primary" style={{background:C.sky,borderColor:C.sky}}>Start check-in →</WarmButton>
+      </Fade>
+    </div>
+  );
+}
+
+function TeenResultScreen({phqa,gad,phqaAnswers,onExercises,onJournal,onHelp,onRetake}){
+  // PHQ-A thresholds same as PHQ-9: 0-4 minimal, 5-9 mild, 10-14 moderate, 15-19 moderately severe, 20+ severe
+  const depSev = phqa<=4?{label:"Minimal",color:C.sage,icon:"🌱",desc:"It looks like you're doing okay right now."}
+    : phqa<=9?{label:"Mild",color:C.sky,icon:"🌤️",desc:"Some things are weighing on you."}
+    : phqa<=14?{label:"Moderate",color:C.amber,icon:"🌧️",desc:"You're carrying quite a lot right now."}
+    : phqa<=19?{label:"Moderately Severe",color:C.peach,icon:"🌩️",desc:"Things are feeling really heavy."}
+    : {label:"Severe",color:C.rose,icon:"⛈️",desc:"We're worried about you — and we're glad you answered honestly."};
+
+  const anxSev = gad<=4?{label:"Minimal",color:C.sage}:gad<=9?{label:"Mild",color:C.sky}:gad<=14?{label:"Moderate",color:C.amber}:{label:"Severe",color:C.rose};
+  const suicidalityEndorsed = phqaAnswers?.[8]!=="skip" && (phqaAnswers?.[8]||0)>0;
+  const moderateOrWorse = phqa>=10 || gad>=10 || suicidalityEndorsed;
+  const urgent = phqa>=20 || suicidalityEndorsed;
+
+  const [revealPhase,setRevealPhase]=useState(0);
+  useEffect(()=>{
+    const t=[setTimeout(()=>setRevealPhase(1),300),setTimeout(()=>setRevealPhase(2),800),setTimeout(()=>setRevealPhase(3),1300)];
+    return()=>t.forEach(clearTimeout);
+  },[]);
+
+  return(
+    <div>
+      {/* Hero */}
+      <div style={{textAlign:"center",paddingTop:14,marginBottom:24}}>
+        <div style={{fontSize:72,marginBottom:12,opacity:revealPhase>=1?1:0,transform:revealPhase>=1?"scale(1)":"scale(0.4)",transition:"all 0.7s cubic-bezier(0.34,1.56,0.64,1)"}}>
+          {urgent?"💙":moderateOrWorse?"🫂":"🌸"}
+        </div>
+        <div style={{opacity:revealPhase>=1?1:0,transform:revealPhase>=1?"translateY(0)":"translateY(12px)",transition:"all 0.5s ease 0.15s"}}>
+          <Pill color={depSev.color}>Your check-in</Pill>
+          <h2 style={{fontFamily:FD,fontSize:26,color:C.text,margin:"14px 0 10px",lineHeight:1.3}}>
+            {urgent?"We hear you":moderateOrWorse?"Thank you for being honest":"You're doing alright"}
+          </h2>
+          <p style={{color:C.textMid,fontSize:15,lineHeight:1.75,maxWidth:340,margin:"0 auto"}}>{depSev.desc}</p>
+        </div>
+      </div>
+
+      {/* URGENT: crisis box first */}
+      {urgent && (
+        <div style={{opacity:revealPhase>=1?1:0,transform:revealPhase>=1?"translateY(0)":"translateY(14px)",transition:"all 0.6s ease 0.3s"}}>
+          <Card style={{marginBottom:16,background:C.roseLight,border:`2px solid ${C.rose}`}}>
+            <p style={{color:C.rose,fontWeight:800,fontSize:16,marginBottom:8}}>💙 Please talk to someone today</p>
+            <p style={{color:C.textMid,fontSize:14,lineHeight:1.75,marginBottom:10}}>What you're feeling matters — and it can get better with the right support. Please tell <strong>one trusted adult</strong> (a parent, older sibling, teacher, school counsellor, or family doctor) how you've been feeling.</p>
+            <p style={{color:C.textMid,fontSize:14,lineHeight:1.75,marginBottom:12}}>If that feels too hard right now, call one of these — they're free, confidential, and used to talking with teens:</p>
+            <div style={{color:C.text,fontSize:13,fontWeight:700,lineHeight:2.1}}>
+              📞 <a href="tel:9152987821" style={{color:C.rose}}>iCall: 9152987821</a><br/>
+              📞 <a href="tel:18602662345" style={{color:C.rose}}>Vandrevala 24/7: 1860-2662-345</a><br/>
+              📞 <a href="tel:18002333330" style={{color:C.rose}}>CHILDLINE: 1098</a> (free for under-18)
+            </div>
+          </Card>
+        </div>
+      )}
+
+      {/* Score cards */}
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:16,opacity:revealPhase>=2?1:0,transform:revealPhase>=2?"translateY(0)":"translateY(14px)",transition:"all 0.6s ease"}}>
+        <div style={{background:`linear-gradient(135deg,${depSev.color}14 0%,${depSev.color}05 100%)`,border:`1.5px solid ${depSev.color}44`,borderRadius:20,padding:"16px 12px",textAlign:"center"}}>
+          <div style={{fontSize:28,marginBottom:2}}>{depSev.icon}</div>
+          <div style={{color:C.textSoft,fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:1.2}}>Mood</div>
+          <div style={{color:depSev.color,fontWeight:800,fontSize:24,fontFamily:FD}}>{phqa}<span style={{fontSize:12,color:C.textMuted,fontFamily:FB}}>/27</span></div>
+          <div style={{background:depSev.color+"22",color:depSev.color,fontSize:10,fontWeight:800,padding:"3px 8px",borderRadius:20,display:"inline-block",marginTop:4}}>{depSev.label}</div>
+        </div>
+        <div style={{background:`linear-gradient(135deg,${anxSev.color}14 0%,${anxSev.color}05 100%)`,border:`1.5px solid ${anxSev.color}44`,borderRadius:20,padding:"16px 12px",textAlign:"center"}}>
+          <div style={{fontSize:28,marginBottom:2}}>🌪️</div>
+          <div style={{color:C.textSoft,fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:1.2}}>Worry</div>
+          <div style={{color:anxSev.color,fontWeight:800,fontSize:24,fontFamily:FD}}>{gad}<span style={{fontSize:12,color:C.textMuted,fontFamily:FB}}>/21</span></div>
+          <div style={{background:anxSev.color+"22",color:anxSev.color,fontSize:10,fontWeight:800,padding:"3px 8px",borderRadius:20,display:"inline-block",marginTop:4}}>{anxSev.label}</div>
+        </div>
+      </div>
+
+      {/* Trusted adult card — always shown for teens */}
+      <div style={{opacity:revealPhase>=3?1:0,transform:revealPhase>=3?"translateY(0)":"translateY(14px)",transition:"all 0.6s ease"}}>
+        <Card style={{marginBottom:14,background:`linear-gradient(135deg,${C.peachLight} 0%,#fff4ee 100%)`,border:`1.5px solid ${C.peach}44`}}>
+          <div style={{display:"flex",gap:12,alignItems:"flex-start"}}>
+            <span style={{fontSize:26,flexShrink:0}}>🤝</span>
+            <div>
+              <p style={{color:C.peach,fontWeight:800,fontSize:14,marginBottom:6}}>
+                {moderateOrWorse?"Please share this with a trusted adult":"Still a good idea: talk to someone"}
+              </p>
+              <p style={{color:C.textMid,fontSize:13,lineHeight:1.7,marginBottom:moderateOrWorse?8:0}}>
+                {moderateOrWorse
+                  ? "You don't have to explain everything. Even saying 'I've been feeling really low/anxious and I took a screen that said I might need to talk to someone' is enough. The right people will listen without judging."
+                  : "Checking in with a parent, teacher, or counsellor is a healthy habit — not just when things feel bad. Even sharing 'I did a wellness check and my scores look okay' is a great conversation starter."}
+              </p>
+              {moderateOrWorse && (
+                <p style={{color:C.textMid,fontSize:12,lineHeight:1.7,fontStyle:"italic"}}>If the first person you try doesn't get it, try another. It can take a couple of tries to find the right person.</p>
+              )}
+            </div>
+          </div>
+        </Card>
+
+        {/* Things you can do */}
+        <div style={{color:C.textSoft,fontSize:11,fontWeight:800,textTransform:"uppercase",letterSpacing:1.2,marginTop:18,marginBottom:10}}>Things that might help right now</div>
+        <div style={{display:"flex",flexDirection:"column",gap:10}}>
+          <button onClick={onExercises} style={{width:"100%",padding:"16px 18px",borderRadius:18,border:`2px solid ${C.sage}55`,background:`linear-gradient(135deg,${C.sageLight} 0%,#f0faf4 100%)`,cursor:"pointer",textAlign:"left",fontFamily:FB,display:"flex",alignItems:"center",gap:12}}>
+            <div style={{width:44,height:44,borderRadius:13,background:C.sage,display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,flexShrink:0}}>🌿</div>
+            <div style={{flex:1}}><div style={{color:C.sage,fontWeight:800,fontSize:14,marginBottom:1}}>Try a calming exercise</div><div style={{color:C.textMid,fontSize:11}}>Breathing, grounding — quick things that actually help</div></div>
+            <span style={{color:C.sage,fontSize:20}}>›</span>
+          </button>
+          <button onClick={onJournal} style={{width:"100%",padding:"16px 18px",borderRadius:18,border:`2px solid ${C.lavender}55`,background:`linear-gradient(135deg,${C.lavenderLight} 0%,#f6f2fc 100%)`,cursor:"pointer",textAlign:"left",fontFamily:FB,display:"flex",alignItems:"center",gap:12}}>
+            <div style={{width:44,height:44,borderRadius:13,background:C.lavender,display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,flexShrink:0}}>📖</div>
+            <div style={{flex:1}}><div style={{color:C.lavender,fontWeight:800,fontSize:14,marginBottom:1}}>Write it out</div><div style={{color:C.textMid,fontSize:11}}>Getting things out of your head can help — private to your phone</div></div>
+            <span style={{color:C.lavender,fontSize:20}}>›</span>
+          </button>
+          <button onClick={onHelp} style={{width:"100%",padding:"16px 18px",borderRadius:18,border:`2px solid ${C.rose}55`,background:`linear-gradient(135deg,${C.roseLight} 0%,#fcf0f2 100%)`,cursor:"pointer",textAlign:"left",fontFamily:FB,display:"flex",alignItems:"center",gap:12}}>
+            <div style={{width:44,height:44,borderRadius:13,background:C.rose,display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,flexShrink:0}}>💙</div>
+            <div style={{flex:1}}><div style={{color:C.rose,fontWeight:800,fontSize:14,marginBottom:1}}>Talk to someone now</div><div style={{color:C.textMid,fontSize:11}}>Free helplines · made for young people</div></div>
+            <span style={{color:C.rose,fontSize:20}}>›</span>
+          </button>
+        </div>
+        <div style={{marginTop:12}}>
+          <WarmButton onClick={onRetake} variant="ghost">↩ Start over</WarmButton>
+        </div>
+
+        {/* Small print */}
+        <div style={{background:C.amberLight,border:`1px solid ${C.amber}33`,borderRadius:12,padding:"10px 14px",marginTop:18}}>
+          <p style={{color:C.textMid,fontSize:11,lineHeight:1.65}}>⚠️ This is a self-screening tool, not a diagnosis. Mental health professionals can help you understand what's going on — please don't rely on this alone if things feel heavy.</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ─── Postnatal pathway (Feature 13) ─────────────────────────────── */
+function PostnatalCheckScreen({onAnswer,onBack}){
+  // Asks the gateway question: are you pregnant or recently had a baby?
+  return(
+    <div>
+      <BackBar onBack={onBack}/>
+      <Fade>
+        <div style={{textAlign:"center",marginTop:18,marginBottom:24}}>
+          <div style={{fontSize:56,marginBottom:12}}>🤱</div>
+          <Pill color={C.rose}>A quick question</Pill>
+          <h2 style={{fontFamily:FD,fontSize:24,color:C.text,margin:"14px 0 10px",lineHeight:1.35}}>Are you pregnant,<br/>or have you had a baby in the last year?</h2>
+          <p style={{color:C.textMid,fontSize:14,lineHeight:1.7,maxWidth:320,margin:"0 auto"}}>Pregnancy and the postnatal period come with their own unique challenges. We can use a screening tool designed specifically for this time if it applies to you.</p>
+        </div>
+      </Fade>
+      <Fade delay={150}>
+        <div style={{display:"flex",flexDirection:"column",gap:10,marginBottom:16}}>
+          <button onClick={()=>onAnswer(true)} style={{
+            padding:"18px 20px",borderRadius:20,
+            border:`2px solid ${C.rose}`,
+            background:`linear-gradient(135deg,${C.roseLight} 0%,#fce0e3 100%)`,
+            cursor:"pointer",textAlign:"left",fontFamily:FB,
+            display:"flex",alignItems:"center",gap:14,
+          }}>
+            <div style={{width:48,height:48,borderRadius:14,background:C.rose,display:"flex",alignItems:"center",justifyContent:"center",fontSize:24,flexShrink:0}}>🌸</div>
+            <div style={{flex:1}}>
+              <div style={{color:C.rose,fontWeight:800,fontSize:15,marginBottom:2}}>Yes — I'm pregnant or recently had a baby</div>
+              <div style={{color:C.textMid,fontSize:12}}>Use EPDS (perinatal depression screen)</div>
+            </div>
+            <span style={{color:C.rose,fontSize:22}}>›</span>
+          </button>
+          <button onClick={()=>onAnswer(false)} style={{
+            padding:"16px 20px",borderRadius:18,
+            border:`1.5px solid ${C.border}`,background:C.card,
+            cursor:"pointer",textAlign:"left",fontFamily:FB,
+            display:"flex",alignItems:"center",gap:12,
+          }}>
+            <div style={{width:44,height:44,borderRadius:13,background:C.peachLight,display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,flexShrink:0}}>📋</div>
+            <div style={{flex:1}}>
+              <div style={{color:C.text,fontWeight:700,fontSize:14}}>No — continue with the standard assessment</div>
+              <div style={{color:C.textSoft,fontSize:11}}>PHQ-9 and GAD-7 pathway</div>
+            </div>
+            <span style={{color:C.textMuted,fontSize:20}}>›</span>
+          </button>
+        </div>
+      </Fade>
+      <Fade delay={280}>
+        <div style={{background:C.sageLight,border:`1.5px solid ${C.sage}33`,borderRadius:12,padding:"10px 14px"}}>
+          <p style={{color:C.textMid,fontSize:12,lineHeight:1.65}}>💡 <strong>Why we ask:</strong> Pregnancy and postnatal mental health are very common and very treatable — but often missed. The EPDS (Edinburgh Postnatal Depression Scale) is specifically validated for this time and asks different kinds of questions than the general PHQ-9.</p>
+        </div>
+      </Fade>
+    </div>
+  );
+}
+
+function PostnatalIntroScreen({onContinue,onBack}){
+  return(
+    <div>
+      <BackBar onBack={onBack}/>
+      <Fade>
+        <div style={{textAlign:"center",marginTop:14,marginBottom:24}}>
+          <div style={{fontSize:64,marginBottom:12}}>🌸</div>
+          <Pill color={C.rose}>EPDS · 10 questions</Pill>
+          <h2 style={{fontFamily:FD,fontSize:24,color:C.text,margin:"14px 0 10px",lineHeight:1.3}}>Just for you, in this season</h2>
+          <p style={{color:C.textMid,fontSize:15,lineHeight:1.75,maxWidth:340,margin:"0 auto"}}>The Edinburgh Postnatal Depression Scale — 10 questions about how you've felt in the past 7 days. Takes about 3 minutes.</p>
+        </div>
+      </Fade>
+      <Fade delay={150}>
+        <Card style={{marginBottom:14,background:`linear-gradient(135deg,${C.roseLight} 0%,#fce8ea 100%)`,border:`1.5px solid ${C.rose}44`}}>
+          <div style={{display:"flex",gap:12,alignItems:"flex-start"}}>
+            <span style={{fontSize:22,flexShrink:0}}>💛</span>
+            <div>
+              <p style={{color:C.rose,fontWeight:800,fontSize:13,marginBottom:6}}>There is no right way to feel</p>
+              <p style={{color:C.textMid,fontSize:13,lineHeight:1.7,marginBottom:8}}>Having a baby is a huge transition. Many mothers feel low, anxious, or overwhelmed — even when they also feel deep love for their baby. Both can be true at once.</p>
+              <p style={{color:C.textMid,fontSize:13,lineHeight:1.7}}>This screen is common in maternity care worldwide. It exists because this season of life is hard, and you deserve support.</p>
+            </div>
+          </div>
+        </Card>
+      </Fade>
+      <Fade delay={260}>
+        <Card style={{marginBottom:16,background:C.sageLight,border:`1.5px solid ${C.sage}44`}}>
+          <p style={{color:C.sage,fontWeight:800,fontSize:13,marginBottom:4}}>🔒 Your privacy</p>
+          <p style={{color:C.textMid,fontSize:13,lineHeight:1.7}}>Nothing leaves your phone. This is between you and yourself — partners, family, and doctors see nothing unless you choose to share.</p>
+        </Card>
+      </Fade>
+      <Fade delay={360}>
+        <WarmButton onClick={onContinue} variant="primary" style={{background:C.rose,borderColor:C.rose}}>Begin check-in →</WarmButton>
+      </Fade>
+    </div>
+  );
+}
+
+/* EPDS uses custom per-question options — needs its own question runner */
+function EPDSScreen({onComplete,onBack}){
+  const [current,setCurrent]=useState(0);
+  const [answers,setAnswers]=useState([]);
+  const [selected,setSelected]=useState(null);
+  const [visible,setVisible]=useState(true);
+  const q=EPDS[current];
+  const total=EPDS.length;
+
+  const handleChoice=(val)=>{
+    if(selected!==null) return;
+    tapHaptic("light");
+    setSelected(val);
+    setTimeout(()=>{
+      setVisible(false);
+      setTimeout(()=>{
+        const na=[...answers,val];
+        if(current+1<total){
+          setAnswers(na);
+          setCurrent(c=>c+1);
+          setSelected(null);
+          setVisible(true);
+        } else {
+          playChime("complete");
+          tapHaptic("medium");
+          const score=na.reduce((a,b)=>a+b,0);
+          onComplete(score,na);
+        }
+      },200);
+    },500);
+  };
+
+  const handleBack=()=>{
+    if(current>0){
+      setAnswers(answers.slice(0,-1));
+      setCurrent(c=>c-1);
+      setSelected(null);
+      setVisible(true);
+    } else onBack();
+  };
+
+  return(
+    <div>
+      <BackBar onBack={handleBack} label={current>0?"Previous question":"Back"}/>
+      {/* Progress dots */}
+      <div style={{display:"flex",justifyContent:"center",gap:6,marginBottom:22,flexWrap:"wrap"}}>
+        {EPDS.map((_,i)=>(
+          <div key={i} style={{
+            width:i===current?24:8,height:8,borderRadius:5,
+            background:i<current?C.rose:i===current?C.rose:C.border,
+            transition:"all 0.4s ease",
+          }}/>
+        ))}
+      </div>
+      <div style={{textAlign:"center",marginBottom:12}}>
+        <Pill color={C.rose}>EPDS · Question {current+1} of {total}</Pill>
+      </div>
+      <div style={{opacity:visible?1:0,transform:visible?"translateY(0) scale(1)":"translateY(-6px) scale(0.98)",transition:"all 0.35s ease"}}>
+        <Card style={{marginBottom:18,background:`linear-gradient(135deg,${C.roseLight} 0%,#ffffff 100%)`,border:`1.5px solid ${C.rose}33`,textAlign:"center",padding:"26px 22px"}}>
+          <div style={{fontSize:44,marginBottom:12}}>{q.emoji}</div>
+          <p style={{color:C.textSoft,fontSize:12,marginBottom:10,letterSpacing:0.3}}>In the past <strong>7 days</strong>…</p>
+          <p style={{fontFamily:FD,color:C.text,fontSize:16,lineHeight:1.55,fontWeight:600}}>{q.q}</p>
+        </Card>
+      </div>
+      <div style={{display:"flex",flexDirection:"column",gap:9}}>
+        {q.options.map((opt,i)=>{
+          const isSelected=selected===opt.value && answers.length===current;
+          return(
+            <button key={i} onClick={()=>handleChoice(opt.value)}
+              style={{
+                display:"flex",alignItems:"center",gap:12,padding:"13px 16px",
+                border:`2px solid ${isSelected?C.rose:C.border}`,
+                background:isSelected?C.rose+"15":C.card,
+                borderRadius:14,cursor:selected!==null?"default":"pointer",
+                textAlign:"left",width:"100%",fontFamily:FB,
+                transition:"all 0.2s ease",
+                opacity:selected!==null&&!isSelected?0.4:1,
+                transform:isSelected?"scale(1.02)":"scale(1)",
+              }}>
+              <div style={{
+                width:28,height:28,borderRadius:9,flexShrink:0,
+                background:isSelected?C.rose:C.rose+"15",
+                color:isSelected?C.white:C.rose,
+                display:"flex",alignItems:"center",justifyContent:"center",
+                fontWeight:800,fontSize:12,
+              }}>{isSelected?"✓":opt.value}</div>
+              <div style={{flex:1,color:C.text,fontSize:14,fontWeight:600,lineHeight:1.45}}>{opt.label}</div>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function PostnatalResultScreen({score,answers,onExercises,onJournal,onHelp,onRetake,onPDF}){
+  // EPDS scoring: ≥13 = probable major depression; 10-12 = probable minor; <10 = low likelihood
+  // Item 10 (index 9) is suicidality — if endorsed (score > 0), urgent regardless of total
+  const suicidalityScore = answers?.[9]||0;
+  const suicidalityEndorsed = suicidalityScore>0;
+  const urgent = suicidalityEndorsed || score>=15;
+
+  const sev = score>=13 ? {label:"Probable major depression",color:C.rose,icon:"⛈️",desc:"Your score suggests postnatal depression that would benefit from professional support."}
+    : score>=10 ? {label:"Probable minor depression",color:C.amber,icon:"🌧️",desc:"Your score suggests some symptoms of postnatal depression. Worth talking to someone."}
+    : {label:"Low likelihood",color:C.sage,icon:"🌱",desc:"Your score is in the low range — but trust yourself. If you feel something is off, please reach out."};
+
+  const [revealPhase,setRevealPhase]=useState(0);
+  useEffect(()=>{
+    const t=[setTimeout(()=>setRevealPhase(1),300),setTimeout(()=>setRevealPhase(2),800),setTimeout(()=>setRevealPhase(3),1300)];
+    return()=>t.forEach(clearTimeout);
+  },[]);
+
+  return(
+    <div>
+      {/* Hero */}
+      <div style={{textAlign:"center",paddingTop:14,marginBottom:24}}>
+        <div style={{fontSize:72,marginBottom:12,opacity:revealPhase>=1?1:0,transform:revealPhase>=1?"scale(1)":"scale(0.4)",transition:"all 0.7s cubic-bezier(0.34,1.56,0.64,1)"}}>
+          {urgent?"💙":score>=10?"🫂":"🌸"}
+        </div>
+        <div style={{opacity:revealPhase>=1?1:0,transform:revealPhase>=1?"translateY(0)":"translateY(12px)",transition:"all 0.5s ease 0.15s"}}>
+          <Pill color={sev.color}>Your EPDS check-in</Pill>
+          <h2 style={{fontFamily:FD,fontSize:26,color:C.text,margin:"14px 0 10px",lineHeight:1.3}}>
+            {urgent?"We hear you — and we're glad you answered honestly"
+              : score>=13?"You're carrying a lot right now"
+              : score>=10?"Some things are worth a gentle look"
+              : "You're doing okay right now"}
+          </h2>
+          <p style={{color:C.textMid,fontSize:15,lineHeight:1.75,maxWidth:340,margin:"0 auto"}}>{sev.desc}</p>
+        </div>
+      </div>
+
+      {/* URGENT banner if item 10 endorsed */}
+      {urgent && (
+        <div style={{opacity:revealPhase>=1?1:0,transform:revealPhase>=1?"translateY(0)":"translateY(14px)",transition:"all 0.6s ease 0.3s"}}>
+          <Card style={{marginBottom:16,background:C.roseLight,border:`2px solid ${C.rose}`}}>
+            <p style={{color:C.rose,fontWeight:800,fontSize:15,marginBottom:8}}>💙 Please reach out today</p>
+            <p style={{color:C.textMid,fontSize:14,lineHeight:1.75,marginBottom:10}}>
+              {suicidalityEndorsed
+                ? "You answered honestly to a hard question — that took courage. Thoughts of harming yourself during pregnancy or after a baby are more common than most people realise, and they are treatable with the right help."
+                : "This is a heavy score. Postnatal depression is one of the most treatable conditions — and getting help early makes a big difference, both for you and your baby."}
+            </p>
+            <p style={{color:C.textMid,fontSize:14,lineHeight:1.75,marginBottom:12}}>Please call your obstetrician, paediatrician, or family doctor today. If you can't, call one of these:</p>
+            <div style={{color:C.text,fontSize:13,fontWeight:700,lineHeight:2.1}}>
+              📞 <a href="tel:9152987821" style={{color:C.rose}}>iCall: 9152987821</a><br/>
+              📞 <a href="tel:18602662345" style={{color:C.rose}}>Vandrevala 24/7: 1860-2662-345</a><br/>
+              📞 <a href="tel:08046110007" style={{color:C.rose}}>NIMHANS Helpline: 080-46110007</a><br/>
+              📞 <a href="tel:112" style={{color:C.rose}}>Emergency: 112</a>
+            </div>
+          </Card>
+        </div>
+      )}
+
+      {/* Score card */}
+      <div style={{opacity:revealPhase>=2?1:0,transform:revealPhase>=2?"translateY(0)":"translateY(14px)",transition:"all 0.6s ease"}}>
+        <Card style={{marginBottom:14,background:`linear-gradient(135deg,${sev.color}14 0%,${sev.color}05 100%)`,border:`1.5px solid ${sev.color}44`,textAlign:"center",padding:"20px 18px"}}>
+          <div style={{fontSize:34,marginBottom:4}}>{sev.icon}</div>
+          <div style={{color:C.textSoft,fontSize:11,fontWeight:800,textTransform:"uppercase",letterSpacing:1.2}}>EPDS total score</div>
+          <div style={{color:sev.color,fontWeight:800,fontSize:36,fontFamily:FD,lineHeight:1,margin:"4px 0"}}>{score}<span style={{fontSize:16,color:C.textMuted,fontFamily:FB}}>/30</span></div>
+          <div style={{background:sev.color+"22",color:sev.color,fontSize:12,fontWeight:800,padding:"4px 12px",borderRadius:20,display:"inline-block",marginTop:6}}>{sev.label}</div>
+        </Card>
+      </div>
+
+      {/* Normalisation */}
+      <div style={{opacity:revealPhase>=3?1:0,transform:revealPhase>=3?"translateY(0)":"translateY(14px)",transition:"all 0.6s ease"}}>
+        <Card style={{marginBottom:14,background:`linear-gradient(135deg,${C.peachLight} 0%,#fff4ee 100%)`,border:`1.5px solid ${C.peach}33`}}>
+          <div style={{display:"flex",gap:12,alignItems:"flex-start"}}>
+            <span style={{fontSize:22,flexShrink:0}}>🫂</span>
+            <div>
+              <p style={{color:C.peach,fontWeight:800,fontSize:13,marginBottom:6}}>You are far from alone</p>
+              <p style={{color:C.textMid,fontSize:13,lineHeight:1.7,marginBottom:6}}><strong>1 in 5 Indian mothers</strong> experience some form of perinatal depression or anxiety. Most never get diagnosed — not because they don't want help, but because no one asked.</p>
+              <p style={{color:C.textMid,fontSize:13,lineHeight:1.7}}>You asked yourself. That's already a brave first step. 🌿</p>
+            </div>
+          </div>
+        </Card>
+
+        {/* Action CTA if moderate+ */}
+        {score>=10 && (
+          <Card style={{marginBottom:14,background:`linear-gradient(135deg,${sev.color} 0%,${sev.color}dd 100%)`,border:"none",color:C.white,padding:"20px"}}>
+            <div style={{color:C.white,fontSize:10,fontWeight:800,textTransform:"uppercase",letterSpacing:1.2,marginBottom:8,opacity:0.92}}>Your one next step</div>
+            <p style={{fontFamily:FD,fontSize:17,fontWeight:600,lineHeight:1.5,marginBottom:10}}>
+              {score>=13
+                ? "Please book an appointment with your obstetrician or a psychiatrist this week"
+                : "Mention this to your obstetrician or family doctor at your next visit"}
+            </p>
+            <p style={{fontSize:13,lineHeight:1.7,opacity:0.92}}>
+              {score>=13
+                ? "Treatment in pregnancy and postpartum is safe and effective. Your doctor can assess you properly and discuss options — therapy, support groups, or (if needed) medication that's safe for breastfeeding."
+                : "You don't need to wait until it's a crisis. Early conversation leads to easier solutions. Many women find talking alone helps more than they expected."}
+            </p>
+          </Card>
+        )}
+
+        {/* Actions */}
+        <div style={{color:C.textSoft,fontSize:11,fontWeight:800,textTransform:"uppercase",letterSpacing:1.2,marginTop:18,marginBottom:10}}>Things you can do right now</div>
+        <div style={{display:"flex",flexDirection:"column",gap:10}}>
+          {score>=10 && (
+            <button onClick={onPDF} style={{width:"100%",padding:"16px 18px",borderRadius:18,border:`2px solid ${C.indigo}55`,background:`linear-gradient(135deg,${C.indigoLight} 0%,#eff1fc 100%)`,cursor:"pointer",textAlign:"left",fontFamily:FB,display:"flex",alignItems:"center",gap:12}}>
+              <div style={{width:44,height:44,borderRadius:13,background:C.indigo,display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,flexShrink:0}}>📄</div>
+              <div style={{flex:1}}><div style={{color:C.indigo,fontWeight:800,fontSize:14,marginBottom:1}}>Download your report</div><div style={{color:C.textMid,fontSize:11}}>Share with your obstetrician or doctor</div></div>
+              <span style={{color:C.indigo,fontSize:20}}>›</span>
+            </button>
+          )}
+          <button onClick={onExercises} style={{width:"100%",padding:"16px 18px",borderRadius:18,border:`2px solid ${C.sage}55`,background:`linear-gradient(135deg,${C.sageLight} 0%,#f0faf4 100%)`,cursor:"pointer",textAlign:"left",fontFamily:FB,display:"flex",alignItems:"center",gap:12}}>
+            <div style={{width:44,height:44,borderRadius:13,background:C.sage,display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,flexShrink:0}}>🌿</div>
+            <div style={{flex:1}}><div style={{color:C.sage,fontWeight:800,fontSize:14,marginBottom:1}}>Try a calming exercise</div><div style={{color:C.textMid,fontSize:11}}>Brief grounding & breathing — safe in pregnancy</div></div>
+            <span style={{color:C.sage,fontSize:20}}>›</span>
+          </button>
+          <button onClick={onJournal} style={{width:"100%",padding:"16px 18px",borderRadius:18,border:`2px solid ${C.lavender}55`,background:`linear-gradient(135deg,${C.lavenderLight} 0%,#f6f2fc 100%)`,cursor:"pointer",textAlign:"left",fontFamily:FB,display:"flex",alignItems:"center",gap:12}}>
+            <div style={{width:44,height:44,borderRadius:13,background:C.lavender,display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,flexShrink:0}}>📖</div>
+            <div style={{flex:1}}><div style={{color:C.lavender,fontWeight:800,fontSize:14,marginBottom:1}}>Write it out</div><div style={{color:C.textMid,fontSize:11}}>Gentle prompts · private to this device</div></div>
+            <span style={{color:C.lavender,fontSize:20}}>›</span>
+          </button>
+          <button onClick={onHelp} style={{width:"100%",padding:"16px 18px",borderRadius:18,border:`2px solid ${C.rose}55`,background:`linear-gradient(135deg,${C.roseLight} 0%,#fcf0f2 100%)`,cursor:"pointer",textAlign:"left",fontFamily:FB,display:"flex",alignItems:"center",gap:12}}>
+            <div style={{width:44,height:44,borderRadius:13,background:C.rose,display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,flexShrink:0}}>💙</div>
+            <div style={{flex:1}}><div style={{color:C.rose,fontWeight:800,fontSize:14,marginBottom:1}}>Talk to someone now</div><div style={{color:C.textMid,fontSize:11}}>Free helplines · 24/7 confidential</div></div>
+            <span style={{color:C.rose,fontSize:20}}>›</span>
+          </button>
+        </div>
+
+        <div style={{marginTop:12}}>
+          <WarmButton onClick={onRetake} variant="ghost">↩ Start over</WarmButton>
+        </div>
+
+        {/* Small print */}
+        <div style={{background:C.amberLight,border:`1px solid ${C.amber}33`,borderRadius:12,padding:"10px 14px",marginTop:18}}>
+          <p style={{color:C.textMid,fontSize:11,lineHeight:1.65}}>⚠️ The EPDS is a screening tool, not a diagnosis. A score below the threshold does not mean you have no concerns — please trust how you feel. If you are in any doubt, speak to your doctor.</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ─── Welcome — animated warm home ───────────────────────────────── */
 function AnimatedHero(){
   // Soft animated illustration: breathing flower with floating particles
@@ -3290,9 +3867,13 @@ const STEP={
   WINDDOWN:"winddown",
   RESULT:"result", EXERCISES:"exercises", FAQ:"faq", LEARN:"learn",
   JOURNAL:"journal",
+  // Adolescent pathway (Feature 12)
+  TEEN_INTRO:"teen_intro", TEEN_PHQA:"teen_phqa", TEEN_GAD:"teen_gad", TEEN_RESULT:"teen_result",
+  // Postnatal pathway (Feature 13)
+  POSTNATAL_CHECK:"postnatal_check", POSTNATAL_INTRO:"postnatal_intro", POSTNATAL_EPDS:"postnatal_epds", POSTNATAL_RESULT:"postnatal_result",
   PRIVACY:"privacy", REFS:"refs", PDF:"pdf",
 };
-const SAVEABLE_STEPS=[STEP.WHO,STEP.PROFILE,STEP.MEDICAL,STEP.MEDS,STEP.DURATION,STEP.PHQ9,STEP.BRIDGE,STEP.GAD7,STEP.TW_PHQ15,STEP.PHQ15,STEP.TW_MDQ,STEP.MDQ,STEP.TW_TRAUMA,STEP.TRAUMA,STEP.SLEEP,STEP.PSYCHOSIS,STEP.FUNCTIONAL];
+const SAVEABLE_STEPS=[STEP.WHO,STEP.PROFILE,STEP.MEDICAL,STEP.MEDS,STEP.DURATION,STEP.PHQ9,STEP.BRIDGE,STEP.GAD7,STEP.TW_PHQ15,STEP.PHQ15,STEP.TW_MDQ,STEP.MDQ,STEP.TW_TRAUMA,STEP.TRAUMA,STEP.SLEEP,STEP.PSYCHOSIS,STEP.FUNCTIONAL,STEP.TEEN_INTRO,STEP.TEEN_PHQA,STEP.TEEN_GAD,STEP.POSTNATAL_CHECK,STEP.POSTNATAL_INTRO,STEP.POSTNATAL_EPDS];
 
 export default function App(){
   const [step,setStep]=useState(STEP.WELCOME);
@@ -3359,7 +3940,25 @@ export default function App(){
         const lastEntry=history[history.length-1];
         const isNewAssessment=!lastEntry||(Date.now()-lastEntry.when)>60000;
         if(isNewAssessment&&data.phq9!==undefined&&data.gad7!==undefined){
-          const newHistory=[...history,{when:Date.now(),phq9:data.phq9,gad7:data.gad7}].slice(-10);
+          const newHistory=[...history,{when:Date.now(),phq9:data.phq9,gad7:data.gad7,type:"adult"}].slice(-10);
+          setHistory(newHistory);
+          window.localStorage?.setItem(HISTORY_KEY,JSON.stringify(newHistory));
+        }
+      } else if(step===STEP.TEEN_RESULT && data.phqa!==undefined){
+        window.localStorage?.removeItem(SAVE_KEY);
+        const lastEntry=history[history.length-1];
+        const isNewAssessment=!lastEntry||(Date.now()-lastEntry.when)>60000;
+        if(isNewAssessment){
+          const newHistory=[...history,{when:Date.now(),phq9:data.phqa,gad7:data.teenGad||0,type:"teen"}].slice(-10);
+          setHistory(newHistory);
+          window.localStorage?.setItem(HISTORY_KEY,JSON.stringify(newHistory));
+        }
+      } else if(step===STEP.POSTNATAL_RESULT && data.epds!==undefined){
+        window.localStorage?.removeItem(SAVE_KEY);
+        const lastEntry=history[history.length-1];
+        const isNewAssessment=!lastEntry||(Date.now()-lastEntry.when)>60000;
+        if(isNewAssessment){
+          const newHistory=[...history,{when:Date.now(),epds:data.epds,type:"postnatal"}].slice(-10);
           setHistory(newHistory);
           window.localStorage?.setItem(HISTORY_KEY,JSON.stringify(newHistory));
         }
@@ -3486,7 +4085,7 @@ export default function App(){
               <div style={{fontFamily:FD,color:C.peach,fontWeight:700,fontSize:18}}>🌸 ManaScreen</div>
               <div style={{display:"flex",gap:10,alignItems:"center"}}>
                 {SAVEABLE_STEPS.includes(step)&&<span style={{color:C.sage,fontSize:10,fontWeight:700,display:"flex",alignItems:"center",gap:3}}>💾 Saved</span>}
-                {[STEP.RESULT,STEP.EXERCISES,STEP.FAQ,STEP.LEARN,STEP.PDF,STEP.QUICK_RESULT].includes(step)&&<button onClick={reset} style={{background:"none",border:"none",color:C.textSoft,cursor:"pointer",fontSize:12,fontFamily:FB}}>Start over</button>}
+                {[STEP.RESULT,STEP.EXERCISES,STEP.FAQ,STEP.LEARN,STEP.PDF,STEP.QUICK_RESULT,STEP.TEEN_RESULT,STEP.POSTNATAL_RESULT,STEP.JOURNAL].includes(step)&&<button onClick={reset} style={{background:"none",border:"none",color:C.textSoft,cursor:"pointer",fontSize:12,fontFamily:FB}}>Start over</button>}
               </div>
             </div>
           )}
@@ -3532,8 +4131,52 @@ export default function App(){
             onHelp={()=>setHelpOpen(true)}/>}
 
           {step===STEP.WHO && <WhoScreen onSelect={v=>{setWho(v);update("who",v);setStep(STEP.PROFILE);}} onBack={()=>setStep(STEP.WELCOME)}/>}
-          {step===STEP.PROFILE && <ProfileScreen initial={data.profile} onComplete={p=>{update("profile",p);setStep(STEP.MEDICAL);}} onBack={()=>setStep(STEP.WHO)}/>}
-          {step===STEP.MEDICAL && <MedicalHistoryScreen initial={data.medical} onComplete={m=>{update("medical",m);setStep(m.meds==="Yes"?STEP.MEDS:STEP.DURATION);}} onBack={()=>setStep(STEP.PROFILE)}/>}
+          {step===STEP.PROFILE && <ProfileScreen initial={data.profile} onComplete={p=>{
+            update("profile",p);
+            // Adolescent pathway if under 18
+            if(p.ageGroup==="under18"){ setStep(STEP.TEEN_INTRO); return; }
+            // Postnatal gate if female and of reproductive age
+            if(p.gender==="female" && ["18-25","26-40"].includes(p.ageGroup)){
+              setStep(STEP.POSTNATAL_CHECK); return;
+            }
+            // Default adult flow
+            setStep(STEP.MEDICAL);
+          }} onBack={()=>setStep(STEP.WHO)}/>}
+
+          {/* ─ Adolescent pathway (Feature 12) ─ */}
+          {step===STEP.TEEN_INTRO && <TeenIntroScreen onContinue={()=>setStep(STEP.TEEN_PHQA)} onBack={()=>setStep(STEP.PROFILE)}/>}
+          {step===STEP.TEEN_PHQA && <LikertScreen key="teen_phqa" questions={PHQA} code="PHQ-A" color={C.sky} bgColor={C.skyLight} sectionTitle="Mood — teen version" options={FREQ4}
+            onComplete={(score,answers)=>{update("phqa",score);update("phqaAnswers",answers);setStep(STEP.TEEN_GAD);}}
+            onBack={()=>setStep(STEP.TEEN_INTRO)} allowSkip={false}/>}
+          {step===STEP.TEEN_GAD && <LikertScreen key="teen_gad" questions={GAD7} code="GAD-7" color={C.sage} bgColor={C.sageLight} sectionTitle="Worry" options={FREQ4}
+            onComplete={(score,answers)=>{update("teenGad",score);update("teenGadAnswers",answers);setStep(STEP.TEEN_RESULT);}}
+            onBack={()=>setStep(STEP.TEEN_PHQA)} allowSkip={false}/>}
+          {step===STEP.TEEN_RESULT && <TeenResultScreen
+            phqa={data.phqa||0} gad={data.teenGad||0} phqaAnswers={data.phqaAnswers||[]}
+            onExercises={()=>{setData(d=>({...d,_exerciseReturn:"teen_result",_exerciseFeeling:null}));setStep(STEP.EXERCISES);}}
+            onJournal={()=>{setData(d=>({...d,_journalReturn:"teen_result"}));setStep(STEP.JOURNAL);}}
+            onHelp={()=>setHelpOpen(true)}
+            onRetake={reset}/>}
+
+          {/* ─ Postnatal pathway (Feature 13) ─ */}
+          {step===STEP.POSTNATAL_CHECK && <PostnatalCheckScreen
+            onAnswer={(isPostnatal)=>{
+              update("isPostnatal",isPostnatal);
+              if(isPostnatal) setStep(STEP.POSTNATAL_INTRO);
+              else setStep(STEP.MEDICAL);
+            }}
+            onBack={()=>setStep(STEP.PROFILE)}/>}
+          {step===STEP.POSTNATAL_INTRO && <PostnatalIntroScreen onContinue={()=>setStep(STEP.POSTNATAL_EPDS)} onBack={()=>setStep(STEP.POSTNATAL_CHECK)}/>}
+          {step===STEP.POSTNATAL_EPDS && <EPDSScreen onComplete={(score,answers)=>{update("epds",score);update("epdsAnswers",answers);setStep(STEP.POSTNATAL_RESULT);}} onBack={()=>setStep(STEP.POSTNATAL_INTRO)}/>}
+          {step===STEP.POSTNATAL_RESULT && <PostnatalResultScreen
+            score={data.epds||0} answers={data.epdsAnswers||[]}
+            onExercises={()=>{setData(d=>({...d,_exerciseReturn:"postnatal_result",_exerciseFeeling:null}));setStep(STEP.EXERCISES);}}
+            onJournal={()=>{setData(d=>({...d,_journalReturn:"postnatal_result"}));setStep(STEP.JOURNAL);}}
+            onHelp={()=>setHelpOpen(true)}
+            onPDF={()=>setStep(STEP.PDF)}
+            onRetake={reset}/>}
+
+          {step===STEP.MEDICAL && <MedicalHistoryScreen initial={data.medical} onComplete={m=>{update("medical",m);setStep(m.meds==="Yes"?STEP.MEDS:STEP.DURATION);}} onBack={()=>setStep(data.isPostnatal===false?STEP.POSTNATAL_CHECK:STEP.PROFILE)}/>}
           {step===STEP.MEDS && <MedicationsScreen initial={data.meds} onComplete={m=>{update("meds",m);setStep(STEP.DURATION);}} onBack={()=>setStep(STEP.MEDICAL)}/>}
           {step===STEP.DURATION && <DurationScreen initial={data.duration} onComplete={d=>{update("duration",d);setStep(STEP.PHQ9);}} onBack={()=>setStep(data.medical?.meds==="Yes"?STEP.MEDS:STEP.MEDICAL)}/>}
 
@@ -3558,8 +4201,26 @@ export default function App(){
           {step===STEP.WINDDOWN && <WindDown onContinue={()=>setStep(STEP.RESULT)}/>}
 
           {step===STEP.RESULT && <ResultScreen data={data} history={history} onExercises={(f)=>{setData(d=>({...d,_exerciseFeeling:f||null}));setStep(STEP.EXERCISES);}} onFAQ={()=>setStep(STEP.FAQ)} onLearn={()=>setStep(STEP.LEARN)} onPDF={()=>setStep(STEP.PDF)} onJournal={()=>{setData(d=>({...d,_journalReturn:"result"}));setStep(STEP.JOURNAL);}} onRetake={reset}/>}
-          {step===STEP.EXERCISES && <ExercisesScreen onDone={()=>setStep(data._exerciseReturn==="dashboard"?STEP.WELCOME:STEP.RESULT)} initialFeeling={data._exerciseFeeling||null}/>}
-          {step===STEP.JOURNAL && <JournalScreen onBack={()=>setStep(data._journalReturn==="dashboard"?STEP.WELCOME:STEP.RESULT)} onDone={()=>setStep(data._journalReturn==="dashboard"?STEP.WELCOME:STEP.RESULT)}/>}
+          {step===STEP.EXERCISES && <ExercisesScreen onDone={()=>{
+            const r=data._exerciseReturn;
+            if(r==="dashboard") setStep(STEP.WELCOME);
+            else if(r==="teen_result") setStep(STEP.TEEN_RESULT);
+            else if(r==="postnatal_result") setStep(STEP.POSTNATAL_RESULT);
+            else setStep(STEP.RESULT);
+          }} initialFeeling={data._exerciseFeeling||null}/>}
+          {step===STEP.JOURNAL && <JournalScreen onBack={()=>{
+            const r=data._journalReturn;
+            if(r==="dashboard") setStep(STEP.WELCOME);
+            else if(r==="teen_result") setStep(STEP.TEEN_RESULT);
+            else if(r==="postnatal_result") setStep(STEP.POSTNATAL_RESULT);
+            else setStep(STEP.RESULT);
+          }} onDone={()=>{
+            const r=data._journalReturn;
+            if(r==="dashboard") setStep(STEP.WELCOME);
+            else if(r==="teen_result") setStep(STEP.TEEN_RESULT);
+            else if(r==="postnatal_result") setStep(STEP.POSTNATAL_RESULT);
+            else setStep(STEP.RESULT);
+          }}/>}
           {step===STEP.FAQ && <FAQScreen phq9={data.phq9||0} gad7={data.gad7||0} onBack={()=>setStep(STEP.RESULT)}/>}
           {step===STEP.LEARN && <LearnScreen onBack={()=>setStep(STEP.RESULT)}/>}
           {step===STEP.PRIVACY && <PrivacyScreen onBack={()=>setStep(STEP.WELCOME)}/>}
